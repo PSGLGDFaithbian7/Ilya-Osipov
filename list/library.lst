@@ -1,1 +1,9 @@
-#!/usr/bin/env tclsh
+#######################################
+    Library  Set_up
+#######################################
+LibraryPath: ./lib 
+LibraryFile: sjsjss_tt.db
+TopModule:  Top
+#--------------------------------------
+
+
