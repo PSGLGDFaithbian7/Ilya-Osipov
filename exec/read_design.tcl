@@ -51,7 +51,7 @@ while {[gets $fileToRead2 line] >= 0} {
 
 while {[gets $fileToRead1 line] >= 0} {
    set line [string trim $line]
-       # TopModule: <name>
+
     if {[regexp {^TopModule:\s(\S+)$} $line _ TopModule]} {
         set top_module $TopModule
         break
