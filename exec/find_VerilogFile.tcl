@@ -1,8 +1,24 @@
 #!/usr/bin/env tclsh
 
+##检查
+if {![file exists ./work]}  {
+    file mkdir ./work
+}
+
+if {![file exists ./setup]} {
+    error "missing ./setup directory"
+}
+
+if {![file exists ./setup/rtl_design.lst]} {
+    error "missing ./setup/rtl_design.lst"
+}
+
+
 set outputfile "./list/rtl_design.list";
 set fileToWrite [open $outputfile w];
+fconfigure $fileToWrite -encoding utf-8
 
+##寻找.v文件的函数
 proc find_HDLfiles {path} {
    set flist {};#定义列表时列表名后加上空格
 
@@ -19,15 +35,19 @@ proc find_HDLfiles {path} {
 #嵌套函数最好定义在外层
 proc recursivefind {current_dir} {
         set HDL_filelist {};#定义列表时列表名后加上空格
-        set current_hdlfile [glob -nocomplain -types f -directory $current_dir -- *.v *.sv *.vhdl *.vh *.svh *.vhd];
+        set patterns {*.v *.sv *.vhdl *.vh *.svh *.vhd *.V *.SV *.VHDL *.VH *.SVH *.VHD}
+        set current_hdlfile [glob -nocomplain -types f -directory $current_dir -- {*}$patterns];
 
         foreach fileToAdd $current_hdlfile {  #循环列表时列表名字不要忘记$
           lappend HDL_filelist $fileToAdd;  
         }
         set subdirectory [glob -nocomplain -types d -directory  $current_dir -- *];
         foreach SubdirCurrent $subdirectory {
-         set HDLinCurrentSubdir  [recursivefind $SubdirCurrent];
-         set  HDL_filelist [concat $HDL_filelist  $HDLinCurrentSubdir];
+        set HDLinCurrentSubdir  [recursivefind $SubdirCurrent];       
+        foreach file2 $HDLinCurrentSubdir {
+          lappend HDL_filelist $file2
+        }
+
         }
        return  $HDL_filelist;
     }
