@@ -7,7 +7,6 @@ set DATE [exec date "+%Y%m%d_%H%M"]
 #********find all .v format file**********
 source ./exec/find_VerilogFile.tcl
 
-
 #********Set_up********
 source ./exec/Set_Up.tcl
 
