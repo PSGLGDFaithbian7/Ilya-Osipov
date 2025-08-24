@@ -9,13 +9,10 @@ source ./exec/find_VerilogFile.tcl
 
 
 #********Set_up********
-source ./exec/InitialParameter.tcl
+source ./exec/Set_Up.tcl
 
 #********Read design******
 source ./exec/read_design.tcl
-
-#******set_library*****
-source ./exec/set_library.tcl
 
 #******set_clock*****
 source ./exec/set_load.tcl

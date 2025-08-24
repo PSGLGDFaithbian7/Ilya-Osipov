@@ -1,10 +1,6 @@
 #!/usr/bin/env tclsh
 
 ##检查
-if {![file exists ./work]}  {
-    file mkdir ./work
-}
-
 if {![file exists ./setup]} {
     error "missing ./setup directory"
 }
@@ -14,7 +10,7 @@ if {![file exists ./setup/rtl_design.lst]} {
 }
 
 
-set outputfile "./list/rtl_design.list";
+set outputfile "./setup/rtl_design.lst";
 set fileToWrite [open $outputfile w];
 fconfigure $fileToWrite -encoding utf-8
 
@@ -54,8 +50,11 @@ proc recursivefind {current_dir} {
 
 
     set hdllist [find_HDLfiles [pwd]];
-    foreach f $hdllist {
+foreach f $hdllist {
+      set f [string map {\n \\n \r \\r} $f]
       puts $fileToWrite $f
     };
 
 close $fileToWrite;
+
+
