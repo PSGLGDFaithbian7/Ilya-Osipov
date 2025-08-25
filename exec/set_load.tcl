@@ -37,34 +37,36 @@ if {[catch {
 
 set ClockPort_List {}
 
+# read clocks (skip comments/blank lines)
 while {[gets $ClockToRecord line1] >= 0} {
-   if {![string match "#*" $line1] && [string trim $line1] ne ""} continue
-    set items1 [split [string trim $line1] "|"]
-    set clean_items1 [lmap item $items1 {string trim $item1}]
-    set ClockPort [string trim [lindex $clean_items1 4]]
-    if {$ClockPort ne ""} {
-        lappend ClockPort_List $ClockPort
-    }
+   if {[string match "#*" [string trim $line1]] || [string trim $line1] eq ""} continue
+   set items1 [split [string trim $line1] "|"]
+   set clean_items1 [lmap item $items1 {string trim $item}]
+   set ClockPort [string trim [lindex $clean_items1 4]]
+   if {$ClockPort ne ""} {
+       lappend ClockPort_List $ClockPort
+   }
 }
 
+# read IO lines
 while {[gets $fileToRead line] >= 0} {
-    if {![string match "#*" $line] && [string trim $line] ne ""} continue
+    if {[string match "#*" [string trim $line]] || [string trim $line] eq ""} continue
     set items [split [string trim $line] "|"]
     set clean_items [lmap item $items {string trim $item}]
     lassign $clean_items Direction IO_Port Clock_Name MAX_DELAY MIN_DELAY MAX_DELAY_O MIN_DELAY_O
-    
+
     if {$Direction != "0" && $IO_Port != "0"} {
         if {$Direction eq "I"} {
-            puts $fileToWrite "set_input_delay  $MAX_DELAY -max  -clock \[get_clocks ${Clock_Name}\]  \[get_ports ${IO_Port}\]"
-            puts $fileToWrite "set_input_delay  $MIN_DELAY -min  -clock \[get_clocks ${Clock_Name}\]  \[get_ports ${IO_Port}\]"
+            puts $fileToWrite "set_input_delay  $MAX_DELAY -max  -clock \\[get_clocks ${Clock_Name}\\]  \\[get_ports ${IO_Port}\\]"
+            puts $fileToWrite "set_input_delay  $MIN_DELAY -min  -clock \\[get_clocks ${Clock_Name}\\]  \\[get_ports ${IO_Port}\\]"
             puts "--------------I/O Delay--------------"
             puts "clock : ${Clock_Name}"
             puts "port : $IO_Port"
             puts "max_input_delay : $MAX_DELAY"
             puts "min_input_delay : $MIN_DELAY"
         } elseif {$Direction eq "O"} {
-            puts $fileToWrite "set_output_delay  $MAX_DELAY_O -max  -clock \[get_clocks ${Clock_Name}\]  \[get_ports ${IO_Port}\]"
-            puts $fileToWrite "set_output_delay  $MIN_DELAY_O -min  -clock \[get_clocks ${Clock_Name}\]  \[get_ports ${IO_Port}\]"
+            puts $fileToWrite "set_output_delay  $MAX_DELAY_O -max  -clock \\[get_clocks ${Clock_Name}\\]  \\[get_ports ${IO_Port}\\]"
+            puts $fileToWrite "set_output_delay  $MIN_DELAY_O -min  -clock \\[get_clocks ${Clock_Name}\\]  \\[get_ports ${IO_Port}\\]"
             puts "--------------I/O Delay--------------"
             puts "clock : ${Clock_Name}"
             puts "port : $IO_Port"
@@ -74,11 +76,11 @@ while {[gets $fileToRead line] >= 0} {
         puts $fileToWrite ""
     } else {
         # 使用大括号包围时钟端口列表，确保正确处理空格
-        set clockPorts [join $ClockPort_List]
-        puts $fileToWrite "set_input_delay  $MAX_DELAY -max  -clock \[get_clocks ${Clock_Name}\] \[remove_from_collection \[all_inputs\] \[get_ports $clockPorts\]\]"
-        puts $fileToWrite "set_input_delay  $MIN_DELAY -min  -clock \[get_clocks ${Clock_Name}\] \[remove_from_collection \[all_inputs\] \[get_ports $clockPorts\]\]"
-        puts $fileToWrite "set_output_delay  $MAX_DELAY_O -max  -clock \[get_clocks ${Clock_Name}\]  \[all_outputs\]"
-        puts $fileToWrite "set_output_delay  $MIN_DELAY_O -min  -clock \[get_clocks ${Clock_Name}\]  \[all_outputs\]"
+        set clockPorts [join $ClockPort_List " "]
+        puts $fileToWrite "set_input_delay  $MAX_DELAY -max  -clock \\[get_clocks ${Clock_Name}\\] \\[remove_from_collection \\[all_inputs\\] \\[get_ports {$clockPorts}\\]\\]"
+        puts $fileToWrite "set_input_delay  $MIN_DELAY -min  -clock \\[get_clocks ${Clock_Name}\\] \\[remove_from_collection \\[all_inputs\\] \\[get_ports {$clockPorts}\\]\\]"
+        puts $fileToWrite "set_output_delay  $MAX_DELAY_O -max  -clock \\[get_clocks ${Clock_Name}\\]  \\[all_outputs\\]"
+        puts $fileToWrite "set_output_delay  $MIN_DELAY_O -min  -clock \\[get_clocks ${Clock_Name}\\]  \\[all_outputs\\]"
         puts "--------------I/O Delay--------------"
         puts "clock : ${Clock_Name}"
         puts "max_input_delay : $MAX_DELAY"
@@ -89,7 +91,7 @@ while {[gets $fileToRead line] >= 0} {
     }
 }
 
-puts $fileToWrite "set_max_fanout 32 \[current_design\]"
+puts $fileToWrite "set_max_fanout 32 \\[current_design\\]"
 
 foreach f [list $fileToRead $fileToWrite $ClockToRecord] {
     catch {close $f}

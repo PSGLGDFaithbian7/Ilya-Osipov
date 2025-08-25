@@ -1,15 +1,12 @@
 #!/usr/bin/env tclsh
 
 ##检查
+
 if {![file exists ./setup]} {
-    error "missing ./setup directory"
+    file mkdir ./setup
 }
 
-if {![file exists ./setup/rtl_design.lst]} {
-    error "missing ./setup/rtl_design.lst"
-}
-
-
+# 始终 (覆盖) 生成 rtl_design.lst，因此不再检查其是否已存在
 set outputfile "./setup/rtl_design.lst";
 set fileToWrite [open $outputfile w];
 fconfigure $fileToWrite -encoding utf-8
@@ -56,5 +53,3 @@ foreach f $hdllist {
     };
 
 close $fileToWrite;
-
-
