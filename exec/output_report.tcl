@@ -1,3 +1,5 @@
+#!/usr/bin/env tclsh
+
 ##检查
 if {![file exists ./work]}  {
     file mkdir ./work

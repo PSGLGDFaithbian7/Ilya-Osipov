@@ -14,10 +14,10 @@ source ./exec/Set_Up.tcl
 source ./exec/read_design.tcl
 
 #******set_clock*****
-source ./exec/set_load.tcl
+source ./exec/set_clock.tcl
 
 #******set_load*****
-source ./exec/set_library.tcl
+source ./exec/set_load.tcl
 
 #*****set_reset
 source ./exec/set_reset.tcl
@@ -26,5 +26,5 @@ source ./exec/set_reset.tcl
 source ./exec/compile.tcl
 
 #******report output****
-source ./exec/repo.tcl
+source ./exec/output_report.tcl
 
