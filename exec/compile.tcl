@@ -1,7 +1,7 @@
 #!/usr/bin/env tclsh
 
 ##choose script to write
-set outputfile "./FinalScript/finalscript.tcl";
+set outputfile "./work/script.tcl";
 set fileToWrite [open $outputfile a];
 
 puts $fileToWrite "********************Compile*******************";

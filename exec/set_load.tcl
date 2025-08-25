@@ -38,17 +38,17 @@ if {[catch {
 set ClockPort_List {}
 
 while {[gets $ClockToRecord line1] >= 0} {
-    if {[string trim $line1] eq ""} continue
+   if {![string match "#*" $line1] && [string trim $line1] ne ""} continue
     set items1 [split [string trim $line1] "|"]
-    set ClockPort [string trim [lindex $items1 4]]
+    set clean_items1 [lmap item $items1 {string trim $item1}]
+    set ClockPort [string trim [lindex $clean_items1 4]]
     if {$ClockPort ne ""} {
         lappend ClockPort_List $ClockPort
     }
 }
 
 while {[gets $fileToRead line] >= 0} {
-    if {[string trim $line] eq ""} continue
-    
+    if {![string match "#*" $line] && [string trim $line] ne ""} continue
     set items [split [string trim $line] "|"]
     set clean_items [lmap item $items {string trim $item}]
     lassign $clean_items Direction IO_Port Clock_Name MAX_DELAY MIN_DELAY MAX_DELAY_O MIN_DELAY_O
