@@ -74,7 +74,7 @@ while {[gets $fileToRead line] >= 0} {
         puts $fileToWrite ""
     } else {
         # 使用大括号包围时钟端口列表，确保正确处理空格
-        set clockPorts "{[join $ClockPort_List] [join $ClockPort_List *]}"
+        set clockPorts [join $ClockPort_List]
         puts $fileToWrite "set_input_delay  $MAX_DELAY -max  -clock \[get_clocks ${Clock_Name}\] \[remove_from_collection \[all_inputs\] \[get_ports $clockPorts\]\]"
         puts $fileToWrite "set_input_delay  $MIN_DELAY -min  -clock \[get_clocks ${Clock_Name}\] \[remove_from_collection \[all_inputs\] \[get_ports $clockPorts\]\]"
         puts $fileToWrite "set_output_delay  $MAX_DELAY_O -max  -clock \[get_clocks ${Clock_Name}\]  \[all_outputs\]"
