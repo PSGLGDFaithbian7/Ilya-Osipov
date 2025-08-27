@@ -1,10 +1,12 @@
 #!/usr/bin/env tclsh
 
+# 错误退出函数
 proc errorExit {message} {
     puts stderr "错误: $message"
     exit 1
 }
 
+# 检查目录
 foreach dir {work setup} {
     if {![file exists ./$dir]} {
         if {$dir eq "work"} {
@@ -17,16 +19,20 @@ foreach dir {work setup} {
     }
 }
 
-foreach file {setup/clk.lst} {
+# 检查文件
+set required_files {setup/clk.lst}
+foreach file $required_files {
     if {![file exists ./$file]} {
         errorExit "缺少 ./$file 文件"
     }
 }
 
+# 获取时间戳
 if {[catch {set DATE [exec date "+%Y%m%d_%H%M"]} err]} {
     set DATE [clock format [clock seconds] -format "%Y%m%d_%H%M"]
 }
 
+# 打开文件
 if {[catch {
     set fileToWrite [open ./work/script.tcl a]
     set fileToRead [open ./setup/clk.lst r]
@@ -34,12 +40,16 @@ if {[catch {
     errorExit "无法打开文件: $err"
 }
 
+# 初始化列表
 set ClockPort_List {}
 set ClockName_List {}
 
+# 读取 clk.lst 文件
 while {[gets $fileToRead line] >= 0} {
-    if {[string match "#*" [string trim $line]] || [string trim $line] eq ""} continue
-    set items [split [string trim $line] "|"]
+    set line [string trim $line]
+    if {[string match "#*" $line] || $line eq ""} continue
+
+    set items [split $line "|"]
     set clean_items {}
     foreach item $items {
         set item [string trim $item]
@@ -49,10 +59,12 @@ while {[gets $fileToRead line] >= 0} {
             lappend clean_items $item
         }
     }
-    lassign $clean_items ClockName Peroid Rise Fall ClockPort
 
-    if {![string is double -strict $Peroid] || $Peroid <= 0} {
-        errorExit "无效的 Peroid 值: '$Peroid' 在 clk.lst 中，行: $line"
+    lassign $clean_items ClockName Period Rise Fall ClockPort
+
+    # 检查数值有效性
+    if {![string is double -strict $Period] || $Period <= 0} {
+        errorExit "无效的 Period 值: '$Period' 在 clk.lst 中，行: $line"
     }
     if {![string is double -strict $Rise]} {
         errorExit "无效的 Rise 值: '$Rise' 在 clk.lst 中，行: $line"
@@ -60,37 +72,34 @@ while {[gets $fileToRead line] >= 0} {
     if {![string is double -strict $Fall]} {
         errorExit "无效的 Fall 值: '$Fall' 在 clk.lst 中，行: $line"
     }
-    puts "Debug: clean_items=$clean_items, ClockName=$ClockName, Peroid=$Peroid, Rise=$Rise, Fall=$Fall, ClockPort=$ClockPort"
 
-    set CLK_SKEW            [expr {$Peroid * 0.05}]
-    set CLK_SOURCE_LATENCY  [expr {$Peroid * 0.1}]
-    set CLK_NETWORK_LATENCY [expr {$Peroid * 0.1}]
-    set CLK_TRAN            [expr {$Peroid * 0.01}]
-    set INPUT_DELAY_MAX     [expr {$Peroid * 0.4}]
+    # 计算参数
+    set CLK_SKEW            [expr {$Period * 0.05}]
+    set CLK_SOURCE_LATENCY  [expr {$Period * 0.1}]
+    set CLK_NETWORK_LATENCY [expr {$Period * 0.1}]
+    set CLK_TRAN            [expr {$Period * 0.01}]
+    set INPUT_DELAY_MAX     [expr {$Period * 0.4}]
     set INPUT_DELAY_MIN     0
-    set OUTPUT_DELAY_MAX    [expr {$Peroid * 0.4}]
+    set OUTPUT_DELAY_MAX    [expr {$Period * 0.4}]
     set OUTPUT_DELAY_MIN    0
 
-    puts "----------------clk------------------"
-    puts "Clock: $ClockName"
-    puts "Peroid_value: ${Peroid}"
-
+    # 输出 DC 命令
     if {[string first "/" $ClockPort] >= 0} {
-        puts $fileToWrite "########Inside CLOCK#########"
-        puts $fileToWrite "create_clock -name $ClockName \[get_pins -hierarchical $ClockPort\] -period $Peroid -waveform \[list $Rise $Fall\]"
+        puts $fileToWrite "######## Inside CLOCK ########"
+        puts $fileToWrite "create_clock -name $ClockName \[get_pins -hierarchical $ClockPort\] -period $Period -waveform \[list $Rise $Fall\]"
         puts $fileToWrite "set_dont_touch_network \[get_pins -hierarchical $ClockPort\]"
         puts $fileToWrite "set_ideal_network -no_propagate \[get_pins -hierarchical $ClockPort\]"
     } else {
-        puts $fileToWrite "########Outside CLOCK#########"
+        puts $fileToWrite "######## Outside CLOCK ########"
         puts $fileToWrite "remove_driving_cell \[get_ports $ClockPort\]"
         puts $fileToWrite "set_drive 0 \[get_ports $ClockPort\]"
-        puts $fileToWrite "create_clock -name $ClockName \[get_ports $ClockPort\] -period $Peroid -waveform \[list $Rise $Fall\]"
+        puts $fileToWrite "create_clock -name $ClockName \[get_ports $ClockPort\] -period $Period -waveform \[list $Rise $Fall\]"
         puts $fileToWrite "set_dont_touch_network \[get_ports $ClockPort\]"
         puts $fileToWrite "set_ideal_network -no_propagate \[get_ports $ClockPort\]"
         lappend ClockPort_List $ClockPort
     }
 
-    puts $fileToWrite "########SKEW & LATENCY#########"
+    puts $fileToWrite "######## SKEW & LATENCY ########"
     puts $fileToWrite "set_clock_uncertainty $CLK_SKEW \[get_clocks $ClockName\]"
     puts $fileToWrite "set_clock_latency -source -max $CLK_SOURCE_LATENCY \[get_clocks $ClockName\]"
     puts $fileToWrite "set_clock_latency -max $CLK_NETWORK_LATENCY \[get_clocks $ClockName\]"
@@ -100,13 +109,13 @@ while {[gets $fileToRead line] >= 0} {
     puts $fileToWrite ""
 }
 
-puts ""
-puts "INFO :  CKNAME_list : $ClockName_List"
-puts "INFO :  CKPORT_list : $ClockPort_List"
-puts ""
+# 输出时钟列表信息
+puts "\nINFO : CKNAME_list : $ClockName_List"
+puts "INFO : CKPORT_list : $ClockPort_List\n"
 
+# 多时钟 false path 设置
 if {[llength $ClockName_List] > 1} {
-    puts $fileToWrite "########FALSE_PATH#########"
+    puts $fileToWrite "######## FALSE_PATH ########"
     for {set i 0} {$i < [llength $ClockName_List]} {incr i} {
         for {set j [expr {$i + 1}]} {$j < [llength $ClockName_List]} {incr j} {
             set from_clk [lindex $ClockName_List $i]
@@ -117,5 +126,6 @@ if {[llength $ClockName_List] > 1} {
     }
 }
 
+# 关闭文件
 catch {close $fileToRead}
 catch {close $fileToWrite}
