@@ -1,7 +1,5 @@
 #!/usr/bin/env tclsh
 
-#!/usr/bin/env tclsh
-
 proc errorExit {message} {
     puts stderr "错误: $message"
     exit 1
@@ -42,8 +40,27 @@ set ClockName_List {}
 while {[gets $fileToRead line] >= 0} {
     if {[string match "#*" [string trim $line]] || [string trim $line] eq ""} continue
     set items [split [string trim $line] "|"]
-    set clean_items [lmap item $items {string trim $item}]
+    set clean_items {}
+    foreach item $items {
+        set item [string trim $item]
+        if {[regexp {^[^:]+:\s*(.*)$} $item -> value]} {
+            lappend clean_items [string trim $value]
+        } else {
+            lappend clean_items $item
+        }
+    }
     lassign $clean_items ClockName Peroid Rise Fall ClockPort
+
+    if {![string is double -strict $Peroid] || $Peroid <= 0} {
+        errorExit "无效的 Peroid 值: '$Peroid' 在 clk.lst 中，行: $line"
+    }
+    if {![string is double -strict $Rise]} {
+        errorExit "无效的 Rise 值: '$Rise' 在 clk.lst 中，行: $line"
+    }
+    if {![string is double -strict $Fall]} {
+        errorExit "无效的 Fall 值: '$Fall' 在 clk.lst 中，行: $line"
+    }
+    puts "Debug: clean_items=$clean_items, ClockName=$ClockName, Peroid=$Peroid, Rise=$Rise, Fall=$Fall, ClockPort=$ClockPort"
 
     set CLK_SKEW            [expr {$Peroid * 0.05}]
     set CLK_SOURCE_LATENCY  [expr {$Peroid * 0.1}]
@@ -60,24 +77,24 @@ while {[gets $fileToRead line] >= 0} {
 
     if {[string first "/" $ClockPort] >= 0} {
         puts $fileToWrite "########Inside CLOCK#########"
-        puts $fileToWrite "create_clock -name $ClockName    \\[get_pins -hierarchical $ClockPort\\] -period $Peroid -waveform \\[list $Rise $Fall\\]"
-        puts $fileToWrite "set_dont_touch_network    \\[get_pins -hierarchical $ClockPort\\]"
-        puts $fileToWrite "set_ideal_network -no_propagate    \\[get_pins -hierarchical $ClockPort\\]"
+        puts $fileToWrite "create_clock -name $ClockName \[get_pins -hierarchical $ClockPort\] -period $Peroid -waveform \[list $Rise $Fall\]"
+        puts $fileToWrite "set_dont_touch_network \[get_pins -hierarchical $ClockPort\]"
+        puts $fileToWrite "set_ideal_network -no_propagate \[get_pins -hierarchical $ClockPort\]"
     } else {
         puts $fileToWrite "########Outside CLOCK#########"
-        puts $fileToWrite "remove_driving_cell      \\[get_ports $ClockPort\\]"
-        puts $fileToWrite "set_drive       0        \\[get_ports $ClockPort\\]"
-        puts $fileToWrite "create_clock -name $ClockName    \\[get_ports $ClockPort\\] -period $Peroid -waveform   \\[list $Rise $Fall\\]"
-        puts $fileToWrite "set_dont_touch_network    \\[get_ports $ClockPort\\]"
-        puts $fileToWrite "set_ideal_network -no_propagate    \\[get_ports $ClockPort\\]"
+        puts $fileToWrite "remove_driving_cell \[get_ports $ClockPort\]"
+        puts $fileToWrite "set_drive 0 \[get_ports $ClockPort\]"
+        puts $fileToWrite "create_clock -name $ClockName \[get_ports $ClockPort\] -period $Peroid -waveform \[list $Rise $Fall\]"
+        puts $fileToWrite "set_dont_touch_network \[get_ports $ClockPort\]"
+        puts $fileToWrite "set_ideal_network -no_propagate \[get_ports $ClockPort\]"
         lappend ClockPort_List $ClockPort
     }
 
     puts $fileToWrite "########SKEW & LATENCY#########"
-    puts $fileToWrite "set_clock_uncertainty          $CLK_SKEW           \\[get_clocks $ClockName\\]"
-    puts $fileToWrite "set_clock_latency -source -max $CLK_SOURCE_LATENCY    \\[get_clocks $ClockName\\]"
-    puts $fileToWrite "set_clock_latency    -max      $CLK_NETWORK_LATENCY       \\[get_clocks $ClockName\\]"
-    puts $fileToWrite "set_clock_transition -max      $CLK_TRAN            \\[get_clocks $ClockName\\]"
+    puts $fileToWrite "set_clock_uncertainty $CLK_SKEW \[get_clocks $ClockName\]"
+    puts $fileToWrite "set_clock_latency -source -max $CLK_SOURCE_LATENCY \[get_clocks $ClockName\]"
+    puts $fileToWrite "set_clock_latency -max $CLK_NETWORK_LATENCY \[get_clocks $ClockName\]"
+    puts $fileToWrite "set_clock_transition -max $CLK_TRAN \[get_clocks $ClockName\]"
 
     lappend ClockName_List $ClockName
     puts $fileToWrite ""
@@ -94,8 +111,8 @@ if {[llength $ClockName_List] > 1} {
         for {set j [expr {$i + 1}]} {$j < [llength $ClockName_List]} {incr j} {
             set from_clk [lindex $ClockName_List $i]
             set to_clk [lindex $ClockName_List $j]
-            puts $fileToWrite "set_false_path -from \\[get_clocks $from_clk\\] -to \\[get_clocks $to_clk\\]"
-            puts $fileToWrite "set_false_path -from \\[get_clocks $to_clk\\] -to \\[get_clocks $from_clk\\]"
+            puts $fileToWrite "set_false_path -from \[get_clocks $from_clk\] -to \[get_clocks $to_clk\]"
+            puts $fileToWrite "set_false_path -from \[get_clocks $to_clk\] -to \[get_clocks $from_clk\]"
         }
     }
 }
