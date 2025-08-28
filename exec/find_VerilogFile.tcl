@@ -45,9 +45,11 @@ proc recursivefind {current_dir} {
        return  $HDL_filelist;
     }
 
-
-    set hdllist [find_HDLfiles "/home/autumn/project/rtl"];
-foreach f $hdllist {
+   set exec_dir [file dirname [info script]]
+   set project_root [file dirname $exec_dir]
+   set rtl_dir [file join $project_root rtl]
+   set hdllist [find_HDLfiles $rtl_dir]
+    foreach f $hdllist {
       set f [string map {\n \\n \r \\r} $f]
       puts $fileToWrite $f
     };

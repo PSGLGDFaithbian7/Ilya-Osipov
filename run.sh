@@ -22,11 +22,11 @@ log_info() {
 }
 
 log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
+    echo -e "${YELLOW}[WARN]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1" # 确保警告为黄色
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
+    echo -e "${RED}[ERROR]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1" # 确保错误为红色
 }
 
 log_success() {
@@ -131,24 +131,27 @@ run_tcl_script() {
 # 运行Design Compiler
 run_design_compiler() {
     log_info "启动Design Compiler..."
-    
+
     local dc_script="$PROJECT_ROOT/work/script.tcl"
     local dc_log="$PROJECT_ROOT/log/dc_shell_${DATE}.log"
-    
-    if [[ ! -f "$dc_script" ]]; then
-        error_exit "DC脚本不存在: $dc_script"
-    fi
-    
-    # 检查DC命令是否可用
-    if ! command -v dc_shell &> /dev/null; then
-        error_exit "Design Compiler (dc_shell) 未找到，请检查环境设置"
-    fi
-    
-    cd "$PROJECT_ROOT" || error_exit "无法切换到项目目录"
-    
-    # 运行Design Compiler
-    log_info "执行Design Compiler综合..."
-    if dc_shell -t -f "$dc_script" 2>&1 | tee "$dc_log"; then
+
+    [[ ! -f "$dc_script" ]] && error_exit "DC脚本不存在: $dc_script"
+
+    # 自动探测 dc 可执行文件（优先 Tcl 版）
+    local dc_bin=""
+    for cand in dc_shell-t dc_shell-xg-t dc_shell; do
+        if command -v "$cand" >/dev/null 2>&1; then
+            dc_bin="$cand"
+            break
+        fi
+    done
+    [[ -z "$dc_bin" ]] && error_exit "Design Compiler 未找到，请检查环境设置（PATH/许可等）"
+
+    # 切换到work目录
+    cd "$PROJECT_ROOT/work" || error_exit "无法切换到work目录"
+
+    log_info "在work目录执行Design Compiler综合（${dc_bin} -f $(basename "$dc_script")）..."
+    if "$dc_bin" -f "$dc_script" 2>&1 | tee "$dc_log"; then
         log_success "Design Compiler执行完成"
     else
         log_error "Design Compiler执行失败，请检查日志: $dc_log"
