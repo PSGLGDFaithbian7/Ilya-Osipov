@@ -1,9 +1,11 @@
 #######################################
     Library  Set_up
 #######################################
-LibraryPath: ./lib 
-LibraryFile: sjsjss_tt.db
-TopModule:  Top
-#--------------------------------------
-
+# Sample Config
+TopModule: Top_logpe
+Incdir: /home/yuhaoxie/dynamics/rtl/dynamic_pe
+LibraryPath: /home/yuhaoxie/dynamics/lib
+LibraryPath: /home/yuhaoxie/dynamics/rtl
+LibraryFile: tcbn65lpwc.db
+LibraryFile: tpan65lpnv2d3wc.db
 
