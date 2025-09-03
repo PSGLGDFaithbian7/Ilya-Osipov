@@ -110,9 +110,28 @@ close $fh_rtl
 # ----------- elaborate / link / uniquify / check / write -----------
 puts $fh_out ""
 puts $fh_out "elaborate [list $top_module]"
+puts $fh_out "current_design [list $top_module]"
 puts $fh_out "link"
 puts $fh_out "uniquify -force"
-puts $fh_out "check_design"
+
+puts $fh_out {
+
+set cd_status [redirect ./report/report.check_rtl {check_design}]
+if {$cd_status != 0} {
+    puts "Check Design Error!"
+    exit
+} else {
+    puts "Check Design Pass!"
+}
+}
+
+
+puts $fh_out "# ----------- Use for MultiVoltage Design -----------"
+puts $fh_out "# set auto_insert_level_shifters_on_clocks all"
+puts $fh_out "# set auto_insert_level_shifters_on_nets all"
+puts $fh_out "#--------area power suggest dont---------"
+puts $fh_out "# set_dont_use [get_lib_cells */LAP2UM]"
+
 
 # 将DDC写入 ../output/<top>_<DATE>_link.ddc
 set outdir [file join ".." "output"]

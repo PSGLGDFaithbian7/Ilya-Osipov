@@ -2,4 +2,4 @@
 #                CLOCK
 #######################################
 
-ClockName: clk | Period: 10 | Rise: 0 | Fall: 5 | ClockPort: clk
+ClockName: clk | Period: 4 | Rise: 0 | Fall: 2 | ClockPort: clk
