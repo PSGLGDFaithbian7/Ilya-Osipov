@@ -114,7 +114,7 @@ puts $fh_out "\n# ----------- Use for MultiVoltage Design -----------"
 puts $fh_out "# set auto_insert_level_shifters_on_clocks all"
 puts $fh_out "# set auto_insert_level_shifters_on_nets all"
 puts $fh_out "#--------area power suggest dont---------"
-puts $fh_out "# set_dont_use [get_lib_cells */LAP2UM]\n"
+puts $fh_out "# set_dont_use \[get_lib_cells */LAP2UM\]\n"
 
 set outdir [file join ".." "output"]
 if {![file exists $outdir]} { file mkdir $outdir }

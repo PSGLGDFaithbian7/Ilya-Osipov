@@ -176,12 +176,12 @@ puts $fileToWrite ""
 
 # 设置搜索路径
 if {[llength $search_path] > 0} {
-    puts $fileToWrite "set_app_var search_path \"[join $search_path \" \"]\""
+    puts $fileToWrite "set_app_var search_path \"[join $search_path " "]\""
 }
 
 # 设置目标库
 if {[llength $processed_library_file] > 0} {
-    puts $fileToWrite "set_app_var target_library \"[join $processed_library_file \" \"]\""
+    puts $fileToWrite "set_app_var target_library \"[join $processed_library_file " "]\""
 }
 
 # 设置链接库
@@ -189,17 +189,17 @@ if {[llength $processed_library_file] > 0} {
 set all_link_libs [concat $processed_library_file $processed_link_file $symbolLibraries $syntheticLibraries]
 if {[llength $all_link_libs] > 0} {
     # The "*" is important, it means link to all designs
-    puts $fileToWrite "set_app_var link_library \"* [join $all_link_libs \" \"]\""
+    puts $fileToWrite "set_app_var link_library \"* [join $all_link_libs " "]\""
 }
 
 # 设置符号库
 if {[llength $symbolLibraries] > 0} {
-    puts $fileToWrite "set_app_var symbol_library \"[join $symbolLibraries \" \"]\""
+    puts $fileToWrite "set_app_var symbol_library \"[join $symbolLibraries " "]\""
 }
 
 # 设置合成库
 if {[llength $syntheticLibraries] > 0} {
-    puts $fileToWrite "set_app_var synthetic_library \"[join $syntheticLibraries \" \"]\""
+    puts $fileToWrite "set_app_var synthetic_library \"[join $syntheticLibraries " "]\""
 }
 
 puts $fileToWrite ""
@@ -209,3 +209,4 @@ close $fileToWrite
 
 puts "Debug: Script generation completed successfully"
 puts "Generated script saved to: ./work/script.tcl"
+
