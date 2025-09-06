@@ -27,9 +27,8 @@ puts $fileToWrite {set_structure true -timing true -boolean false}
 
 puts $fileToWrite {
 # Final check before compiling
-set cd_status [redirect ./report/report.check_beforecompile {check_design}]
-if {$cd_status != 0} {
-    puts "Check Design Error before compile!"
+if [catch {redirect ../report/report.check_beforecompile {check_design}} cd_status] {
+    puts "Check Design Error before compile: $cd_status"
     exit
 } else {
     puts "Check Design Pass before compile!"

@@ -101,9 +101,8 @@ puts $fh_out "link"
 puts $fh_out "uniquify -force"
 
 puts $fh_out {
-set cd_status [redirect ./report/report.check_rtl {check_design}]
-if {$cd_status != 0} {
-    puts "Check Design Error!"
+if [catch {redirect ../report/report.check_rtl {check_design}} cd_status] {
+    puts "Check Design Error: $cd_status"
     exit
 } else {
     puts "Check Design Pass!"

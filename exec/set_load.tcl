@@ -44,11 +44,11 @@ while {[gets $fh_lib line] >= 0} {
     set line [string trim [lindex [split $line "#"] 0]]
     if {$line eq ""} { continue }
 
-    if {[regexp {^LibraryFile_WC:\s+(\S+)$} $line -> v]} {
+    if {[regexp {^LibraryFile_WC:\s*(\w+)(?:\.db)?$} $line -> v]} {
         set LibraryFileWC [string trim $v]
         continue
     }
-    if {[regexp {^WorstCondition:\s+(\S+)$} $line -> v]} {
+    if {[regexp {^WorstCondition:\s*(.+)$} $line -> v]} {
         set WorstCondition [string trim $v]
         continue
     }
@@ -56,6 +56,12 @@ while {[gets $fh_lib line] >= 0} {
         set top_module $tm
         continue
     }
+}
+
+set full_library_path "${LibraryFileWC}.db"  ;# 假设 .db 是默认后缀
+if {[catch {read_lib $full_library_path} err]} {
+    puts "Error: Failed to read library $full_library_path: $err"
+    exit 1
 }
 safeClose $fh_lib
 

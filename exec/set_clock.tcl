@@ -160,12 +160,14 @@ while {[gets $fileToRead line] >= 0} {
     puts $fileToWrite "set_clock_uncertainty -hold  $CLK_UNC_HOLD  \[get_clocks $ClockName\]"
 
     puts $fileToWrite "######## Source & Network Latency (min/max) ########"
-    puts $fileToWrite "set_clock_latency -source -min $CLK_SRC_LAT_MIN -max $CLK_SRC_LAT_MAX \[get_clocks $ClockName\]"
-    puts $fileToWrite "set_clock_latency         -min $CLK_NET_LAT_MIN -max $CLK_NET_LAT_MAX \[get_clocks $ClockName\]"
+    puts $fileToWrite "set_clock_latency -source -min $CLK_SRC_LAT_MIN \[get_clocks $ClockName\]"
+    puts $fileToWrite "set_clock_latency -source -max $CLK_SRC_LAT_MAX \[get_clocks $ClockName\]"
+    puts $fileToWrite "set_clock_latency -min $CLK_NET_LAT_MIN \[get_clocks $ClockName\]"
+    puts $fileToWrite "set_clock_latency -max $CLK_NET_LAT_MAX \[get_clocks $ClockName\]"
 
     puts $fileToWrite "######## Clock Transition (min/max) ########"
-    puts $fileToWrite "set_clock_transition -min $CLK_TRAN_MIN -max $CLK_TRAN_MAX \[get_clocks $ClockName\]"
-
+    puts $fileToWrite "set_clock_transition -min $CLK_TRAN_MIN \[get_clocks $ClockName\]"
+    puts $fileToWrite "set_clock_transition -max $CLK_TRAN_MAX \[get_clocks $ClockName\]"
     # --------------------------
     # IO timing placeholders (commented; fill your port lists when available)
     # --------------------------
