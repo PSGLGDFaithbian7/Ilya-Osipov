@@ -60,7 +60,7 @@ puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.paths.m
 puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.full_paths.max {report_timing -path full -input_pins -nets -transition_time -capacitance -attributes -delay max -max_paths 5 -nworst 2 -nosplit}"
 puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.full_paths.min {report_timing -path full -input_pins -nets -transition_time -capacitance -attributes -delay min -max_paths 5 -nworst 2 -nosplit}"
 puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.constraint_violators {report_constraints -all_violators -verbose -nosplit}"
-puts $fileToWrite "redirect -file ../report/${top_MOUDLE}_${DATE}_report.qor {report_qor -nosplit}"
+puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.qor {report_qor -nosplit}"
 puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.area {report_area -hierarchy -nosplit}"
 puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.power {report_power -hierarchy -nosplit}"
 puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.clock_gating {report_clock_gating -structure -verbose -nosplit}"
