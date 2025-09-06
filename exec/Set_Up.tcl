@@ -25,7 +25,7 @@ proc unique {BeforeUni} {
     return $AfterUni
 }
 
-# 新增：检查库文件是否存在的函数
+# 检查库文件是否存在的函数
 proc find_library_file {libname search_paths} {
     # 首先在 ../lib/ 目录下查找
     set scriptDir [file dirname [file normalize [info script]]]
@@ -63,9 +63,6 @@ set link_file {}
 set symbolLibraries {}
 set syntheticLibraries {}
 set top_module ""
-set incdir {}
-set library_file_wc {}
-set worst_condition ""
 
 puts "Debug: Starting to read library.lst"
 
@@ -126,29 +123,6 @@ while {[gets $fileToRead line] >= 0} {
         puts "Debug: TopModule: $top_module"
         continue
     }
-
-    # 新增：处理 Incdir
-    if {[regexp -nocase {^\s*Incdir\s*:\s*(.+)$} $line _ IncDir]} {
-        set IncDir [string trim $IncDir]
-        lappend incdir $IncDir
-        puts "Debug: Incdir: $IncDir"
-        continue
-    }
-
-    # 新增：处理 LibraryFile_WC
-    if {[regexp -nocase {^\s*LibraryFile_WC\s*:\s*(.+)$} $line _ LibraryFileWC]} {
-        set LibraryFileWC [string trim $LibraryFileWC]
-        lappend library_file_wc $LibraryFileWC
-        puts "Debug: LibraryFile_WC: $LibraryFileWC"
-        continue
-    }
-
-    # 新增：处理 WorstCondition
-    if {[regexp -nocase {^\s*WorstCondition\s*:\s*(.+)$} $line _ WorstCond]} {
-        set worst_condition [string trim $WorstCond]
-        puts "Debug: WorstCondition: $worst_condition"
-        continue
-    }
 }
 
 close $fileToRead
@@ -164,8 +138,6 @@ set library_file       [unique $library_file]
 set link_file          [unique $link_file]
 set symbolLibraries    [unique $symbolLibraries]
 set syntheticLibraries [unique $syntheticLibraries]
-set incdir             [unique $incdir]
-set library_file_wc    [unique $library_file_wc]
 
 puts "Debug: search_path = $search_path"
 puts "Debug: library_file = $library_file"
@@ -202,10 +174,9 @@ puts $fileToWrite "set_host_options -max_cores 16"
 puts $fileToWrite "set_svf  ../output/${top_module}_${DATE}.svf"
 puts $fileToWrite ""
 
-# 设置搜索路径（包含include目录）
-set all_search_paths [concat $search_path $incdir]
-if {[llength $all_search_paths] > 0} {
-    puts $fileToWrite "set_app_var search_path \"[join $all_search_paths \" \"]\""
+# 设置搜索路径
+if {[llength $search_path] > 0} {
+    puts $fileToWrite "set_app_var search_path \"[join $search_path \" \"]\""
 }
 
 # 设置目标库
@@ -214,8 +185,10 @@ if {[llength $processed_library_file] > 0} {
 }
 
 # 设置链接库
+# link_library 应该包含 target_library, link_file, symbol a,d synthetic libraries
 set all_link_libs [concat $processed_library_file $processed_link_file $symbolLibraries $syntheticLibraries]
 if {[llength $all_link_libs] > 0} {
+    # The "*" is important, it means link to all designs
     puts $fileToWrite "set_app_var link_library \"* [join $all_link_libs \" \"]\""
 }
 
@@ -231,9 +204,6 @@ if {[llength $syntheticLibraries] > 0} {
 
 puts $fileToWrite ""
 puts $fileToWrite "# Top module: $top_module"
-if {$worst_condition ne ""} {
-    puts $fileToWrite "# Worst condition: $worst_condition"
-}
 
 close $fileToWrite
 
