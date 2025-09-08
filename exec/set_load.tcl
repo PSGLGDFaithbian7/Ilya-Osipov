@@ -59,7 +59,7 @@ while {[gets $fh_lib line] >= 0} {
 }
 
 set full_library_path "${LibraryFileWC}.db"  ;# 假设 .db 是默认后缀
-if {[catch {read_lib $full_library_path} err]} {
+if {[catch {read_db $full_library_path} err]} {
     puts "Error: Failed to read library $full_library_path: $err"
     exit 1
 }
