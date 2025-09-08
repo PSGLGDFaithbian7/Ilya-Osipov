@@ -1,6 +1,6 @@
 #!/usr/bin/env tclsh
 #==============================================================================
-# 0. 文件句柄（保持你原样）
+# 0. 文件句柄与路径（保持你原样）
 #==============================================================================
 set outputfile     "./work/script.tcl"
 set fileToWrite    [open $outputfile a]   
@@ -49,17 +49,17 @@ if {[get_attribute [current_design] has_errors]} {
 }
 
 ##############################################################################
-# 2. 保守约束（保持你原样）
+# 2. 保守约束（Pre-CTS 偏大功耗）
 ##############################################################################
 puts $fileToWrite "\n# ---------- Conservative constraints for Pre-CTS power ----------"
 
-# 2.1 输入过渡（保持）
-puts $fileToWrite "set_input_transition 0.5 \\[all_inputs\\]"
+# 2.1 输入过渡（语法修正）
+puts $fileToWrite "set_input_transition 0.5 \[all_inputs\]"
 
 # 2.2 时钟门控风格（保持）
 puts $fileToWrite "set_clock_gating_style -positive_edge_logic integrated"
 
-# 2.3 频率加压（保持）
+# 2.3 频率加压（保持你原样）
 puts $fileToWrite {
 if {![info exists CLOCK_PERIOD]} {set CLOCK_PERIOD 10.0}
 set clks [get_clocks *]
@@ -71,7 +71,7 @@ create_clock -period [expr ${CLOCK_PERIOD} * 0.85] [get_ports [lindex $clks 0]]
 }
 
 ##############################################################################
-# 3. 功耗分析 —— 双重策略（保持你原样）
+# 3. 功耗分析 —— 双重策略
 ##############################################################################
 puts $fileToWrite "\n#==================== Post-compile Power Strategy ===================="
 
@@ -147,15 +147,11 @@ if {[_file_exists $SAIF_FILE] || [_file_exists $VCD_FILE]} {
 }
 }
 
-##############################################################################
-# 4. 保守加码（两项，零出错）
-##############################################################################
 puts $fileToWrite "\n# ---------- Extra conservative boost ----------"
 
 # ① 输入过渡再放大 → 内部短路功耗↑
-puts $fileToWrite "set_input_transition 1.0 \\[all_inputs\\]   ;# 比 0.5 更保守"
+puts $fileToWrite "set_input_transition 1.0 [all_inputs]   ;# 比 0.5 更保守"
 
-# ② 所有组合输出节点也拉到 1.0 toggle/cycle，彻底堵死“零翻转”低估
 puts $fileToWrite {
 set combNode [remove_from_collection [get_pins -hier -filter direction==out] [all_registers -q_pins]]
 if {[sizeof_collection $combNode] > 0} {
@@ -163,22 +159,6 @@ if {[sizeof_collection $combNode] > 0} {
 }
 }
 
-##############################################################################
-# 5. 报告生成（保持你原样）
-##############################################################################
-puts $fileToWrite "set DATE \[clock format \[clock seconds\] -format \"%Y%m%d_%H%M%S\"\]"
-puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.qor            {report_qor -nosplit}"
-puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.area          {report_area -hierarchy -nosplit}"
-puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.power         {report_power -hierarchy -nosplit}"
-puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.clock_gating  {report_clock_gating -structure -verbose -nosplit}"
-puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.activity_unannotated.rpt {report_switching_activity -unannotated -nosplit}"
-puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.activity_summary.rpt   {report_switching_activity -hierarchy -summary -nosplit}"
-puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.power_detail.rpt       {report_power -analysis_effort high -hierarchy}"
-
-# ------------------------------------------------------------------------------
-# 6. 收尾（保持你原样）
-# ------------------------------------------------------------------------------
 flush $fileToWrite
 close $fileToWrite
-puts "Generated conservative Pre-CTS script: [file normalize $outputfile]"
-puts "Run:  dc_shell -f $outputfile | tee ../report/script.log"
+puts "Conservative Pre-CTS script generated (no file output section)."
