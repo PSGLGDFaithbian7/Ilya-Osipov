@@ -54,15 +54,17 @@ puts $fileToWrite "write_parasitics -format spef -output ../output/${top_module}
 puts $fileToWrite "set_svf -off"
 
 puts $fileToWrite "\n######## Synthesis Reports ########"
-puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.timing {check_timing}"
-puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.paths.max {report_timing -path end -delay max -max_paths 200 -nworst 2 -nosplit}"
-puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.paths.min {report_timing -path end -delay min -max_paths 200 -nworst 2 -nosplit}"
-puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.full_paths.max {report_timing -path full -input_pins -nets -transition_time -capacitance -attributes -delay max -max_paths 5 -nworst 2 -nosplit}"
-puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.full_paths.min {report_timing -path full -input_pins -nets -transition_time -capacitance -attributes -delay min -max_paths 5 -nworst 2 -nosplit}"
-puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.constraint_violators {report_constraints -all_violators -verbose -nosplit}"
-puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.qor {report_qor -nosplit}"
-puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.area {report_area -hierarchy -nosplit}"
-puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.power {report_power -hierarchy -nosplit}"
-puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.clock_gating {report_clock_gating -structure -verbose -nosplit}"
+
+##############################################################################
+# 4. 报告生成（统一 ./report/，仿照 DATE 命名风格，追加形式）
+##############################################################################
+puts $fileToWrite "set DATE \[clock format \[clock seconds\] -format \"%Y%m%d_%H%M%S\"\]"
+puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.qor            {report_qor -nosplit}"
+puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.area          {report_area -hierarchy -nosplit}"
+puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.power         {report_power -hierarchy -nosplit}"
+puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.clock_gating  {report_clock_gating -structure -verbose -nosplit}"
+puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.activity_unannotated.rpt {report_switching_activity -unannotated -nosplit}"
+puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.activity_summary.rpt   {report_switching_activity -hierarchy -summary -nosplit}"
+puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.power_detail.rpt       {report_power -analysis_effort medium -hierarchy}"
 
 close $fileToWrite
