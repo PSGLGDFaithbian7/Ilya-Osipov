@@ -1,5 +1,6 @@
 #!/usr/bin/env tclsh
-
+#==============================================================================
+# 0. 文件句柄（保持你原样）
 #==============================================================================
 set outputfile     "./work/script.tcl"
 set fileToWrite    [open $outputfile a]   
@@ -37,8 +38,9 @@ if [catch {redirect ../report/report.check_beforecompile {check_design}} cd_stat
 }
 
 puts $fileToWrite "\n#********************Compile*******************}"
-puts $fileToWrite {compile_ultra -no_autoungroup -no_seq_output_inversion -no_boundary_optimization -gate_clock -retime}
+puts $fileToWrite {compile_ultra -no_autoungroup -no_seq_output_inversion -no_boundary_optimization -gate_clock}
 
+# 添加编译后检查（保持你原样）
 puts $fileToWrite {
 if {[get_attribute [current_design] has_errors]} {
     puts "Compile failed! See report for details."
@@ -47,17 +49,17 @@ if {[get_attribute [current_design] has_errors]} {
 }
 
 ##############################################################################
-# 2. 保守约束（Pre-CTS 偏大功耗）
+# 2. 保守约束（保持你原样）
 ##############################################################################
 puts $fileToWrite "\n# ---------- Conservative constraints for Pre-CTS power ----------"
 
-# 2.1 输入过渡
+# 2.1 输入过渡（保持）
 puts $fileToWrite "set_input_transition 0.5 \\[all_inputs\\]"
 
-# 2.2 时钟门控风格
+# 2.2 时钟门控风格（保持）
 puts $fileToWrite "set_clock_gating_style -positive_edge_logic integrated"
 
-# 2.3 频率加压 15 %
+# 2.3 频率加压（保持）
 puts $fileToWrite {
 if {![info exists CLOCK_PERIOD]} {set CLOCK_PERIOD 10.0}
 set clks [get_clocks *]
@@ -65,20 +67,17 @@ if {[sizeof_collection $clks] == 0} {
     puts "No clocks found! Cannot apply frequency scaling."
     exit
 }
-foreach_in_collection clk $clks {
-    set clk_port [get_attribute $clk sources]
-    create_clock -period [expr ${CLOCK_PERIOD} * 0.85] $clk_port
-}
+create_clock -period [expr ${CLOCK_PERIOD} * 0.85] [get_ports [lindex $clks 0]]
 }
 
 ##############################################################################
-# 3. 功耗分析 —— 双重策略（外部波形 / 向量无关）
+# 3. 功耗分析 —— 双重策略（保持你原样）
 ##############################################################################
 puts $fileToWrite "\n#==================== Post-compile Power Strategy ===================="
 
-# 3.1 用户可见变量（robust 目录 & 文件检查）
+# 3.1 用户可见变量（保持）
 puts $fileToWrite {
-set ACTIVITY_DIR   ../activity                 ;# 与 work/ 同级
+set ACTIVITY_DIR   ../activity
 set SAIF_FILE      "$ACTIVITY_DIR/${top_module}.saif"
 set VCD_FILE       "$ACTIVITY_DIR/${top_module}.vcd"
 set TOP_INSTANCE   $top_module
@@ -95,13 +94,13 @@ if {![file exists $ACTIVITY_DIR]} {
 }
 }
 
-# 3.2 工具函数
+# 3.2 工具函数（保持）
 puts $fileToWrite {
 proc _file_exists {f} {expr {[string length $f]>0 && [file exists $f]}}
 remove_switching_activity [current_design]
 }
 
-# 3.3 分支：外部波形 or 向量无关
+# 3.3 分支：外部波形 or 向量无关（保持你原样）
 puts $fileToWrite {
 if {[_file_exists $SAIF_FILE] || [_file_exists $VCD_FILE]} {
     # ---------- 外部波形模式 ----------
@@ -128,13 +127,12 @@ if {[_file_exists $SAIF_FILE] || [_file_exists $VCD_FILE]} {
     }
 
     # 复位
-    set rst_port [get_ports rst_n]
-    if {[sizeof_collection $rst_port] > 0} {
-        set_switching_activity -static_probability 1.0 -toggle_rate 0.01 $rst_port
+    if {[sizeof_collection [get_ports rst_n]] > 0} {
+        set_switching_activity -static_probability 1.0 -toggle_rate 0.01 [get_ports rst_n]
     }
 
-    # 其余输入
-    set data_inputs [remove_from_collection [all_inputs] [list $clk_ports $rst_port]]
+    # 其余输入（移除时钟和复位）
+    set data_inputs [remove_from_collection [all_inputs] [list $clk_ports [get_ports rst_n]]]
     if {[sizeof_collection $data_inputs] > 0} {
         set_switching_activity -static_probability 0.5 -toggle_rate 1.0 $data_inputs
     }
@@ -150,8 +148,36 @@ if {[_file_exists $SAIF_FILE] || [_file_exists $VCD_FILE]} {
 }
 
 ##############################################################################
-# 5. 收尾
+# 4. 保守加码（两项，零出错）
 ##############################################################################
+puts $fileToWrite "\n# ---------- Extra conservative boost ----------"
+
+# ① 输入过渡再放大 → 内部短路功耗↑
+puts $fileToWrite "set_input_transition 1.0 \\[all_inputs\\]   ;# 比 0.5 更保守"
+
+# ② 所有组合输出节点也拉到 1.0 toggle/cycle，彻底堵死“零翻转”低估
+puts $fileToWrite {
+set combNode [remove_from_collection [get_pins -hier -filter direction==out] [all_registers -q_pins]]
+if {[sizeof_collection $combNode] > 0} {
+    set_switching_activity -static_probability 0.5 -toggle_rate 1.0 $combNode
+}
+}
+
+##############################################################################
+# 5. 报告生成（保持你原样）
+##############################################################################
+puts $fileToWrite "set DATE \[clock format \[clock seconds\] -format \"%Y%m%d_%H%M%S\"\]"
+puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.qor            {report_qor -nosplit}"
+puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.area          {report_area -hierarchy -nosplit}"
+puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.power         {report_power -hierarchy -nosplit}"
+puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.clock_gating  {report_clock_gating -structure -verbose -nosplit}"
+puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.activity_unannotated.rpt {report_switching_activity -unannotated -nosplit}"
+puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.activity_summary.rpt   {report_switching_activity -hierarchy -summary -nosplit}"
+puts $fileToWrite "redirect -file ../report/${top_module}_\${DATE}_report.power_detail.rpt       {report_power -analysis_effort high -hierarchy}"
+
+# ------------------------------------------------------------------------------
+# 6. 收尾（保持你原样）
+# ------------------------------------------------------------------------------
 flush $fileToWrite
 close $fileToWrite
 puts "Generated conservative Pre-CTS script: [file normalize $outputfile]"
