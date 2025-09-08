@@ -2,18 +2,15 @@
 
 #==============================================================================
 set outputfile     "./work/script.tcl"
-file mkdir ./work
-file mkdir ./report
-set fileToWrite    [open $outputfile w]   ;# 一次性新建，不再追加
-
+set fileToWrite    [open $outputfile a]   
 
 puts $fileToWrite "\n#============================================================================#"
 puts $fileToWrite "#                                Synthesize                                   #"
 puts $fileToWrite "#============================================================================#"
 
 puts $fileToWrite {# Prevent assignment statements in the Verilog netlist.}
-puts $fileToWrite {set_fix_multiple_port_nets -feedthrough}
-puts $fileToWrite {set_fix_multiple_port_nets -all -buffer_constants}
+puts $fileToWrite {set_fix_multiple_port_nets -feedthrough [get_designs *]}
+puts $fileToWrite {set_fix_multiple_port_nets -all -buffer_constants [get_designs *]}
 
 puts $fileToWrite "\n# Power optimization settings"
 puts $fileToWrite {set_leakage_optimization true}
@@ -31,7 +28,7 @@ puts $fileToWrite {set_structure true -timing true -boolean false}
 
 puts $fileToWrite {
 # Final check before compiling
-if [catch {redirect ./report/report.check_beforecompile {check_design}} cd_status] {
+if [catch {redirect ../report/report.check_beforecompile {check_design}} cd_status] {
     puts "Check Design Error before compile: $cd_status"
     exit
 } else {
@@ -40,7 +37,14 @@ if [catch {redirect ./report/report.check_beforecompile {check_design}} cd_statu
 }
 
 puts $fileToWrite "\n#********************Compile*******************}"
-puts $fileToWrite {compile_ultra -no_autoungroup -no_seq_output_inversion -no_boundary_optimization -gate_clock}
+puts $fileToWrite {compile_ultra -no_autoungroup -no_seq_output_inversion -no_boundary_optimization -gate_clock -retime}
+
+puts $fileToWrite {
+if {[get_attribute [current_design] has_errors]} {
+    puts "Compile failed! See report for details."
+    exit
+}
+}
 
 ##############################################################################
 # 2. 保守约束（Pre-CTS 偏大功耗）
@@ -56,7 +60,15 @@ puts $fileToWrite "set_clock_gating_style -positive_edge_logic integrated"
 # 2.3 频率加压 15 %
 puts $fileToWrite {
 if {![info exists CLOCK_PERIOD]} {set CLOCK_PERIOD 10.0}
-create_clock -period [expr ${CLOCK_PERIOD} * 0.85] [get_ports [lindex [get_clocks *] 0]]
+set clks [get_clocks *]
+if {[sizeof_collection $clks] == 0} {
+    puts "No clocks found! Cannot apply frequency scaling."
+    exit
+}
+foreach_in_collection clk $clks {
+    set clk_port [get_attribute $clk sources]
+    create_clock -period [expr ${CLOCK_PERIOD} * 0.85] $clk_port
+}
 }
 
 ##############################################################################
@@ -66,7 +78,7 @@ puts $fileToWrite "\n#==================== Post-compile Power Strategy =========
 
 # 3.1 用户可见变量（robust 目录 & 文件检查）
 puts $fileToWrite {
-set ACTIVITY_DIR   ./activity                 ;# 与 work/ 同级
+set ACTIVITY_DIR   ../activity                 ;# 与 work/ 同级
 set SAIF_FILE      "$ACTIVITY_DIR/${top_module}.saif"
 set VCD_FILE       "$ACTIVITY_DIR/${top_module}.vcd"
 set TOP_INSTANCE   $top_module
@@ -86,7 +98,6 @@ if {![file exists $ACTIVITY_DIR]} {
 # 3.2 工具函数
 puts $fileToWrite {
 proc _file_exists {f} {expr {[string length $f]>0 && [file exists $f]}}
-
 remove_switching_activity [current_design]
 }
 
@@ -98,9 +109,10 @@ if {[_file_exists $SAIF_FILE] || [_file_exists $VCD_FILE]} {
     if {[_file_exists $SAIF_FILE]} {
         read_saif -input $SAIF_FILE -instance $TOP_INSTANCE -verbose
     } else {
-        set _tmp ./report/_vcd2saif.saif
+        set _tmp ../report/_vcd2saif.saif
         if {![catch {sh vcd2saif -input $VCD_FILE -output $_tmp -instance $TOP_INSTANCE}]} {
             read_saif -input $_tmp -instance $TOP_INSTANCE -verbose
+            file delete $_tmp
         } else {
             puts "WARN: vcd2saif failed; fall back to vectorless"
         }
@@ -116,12 +128,16 @@ if {[_file_exists $SAIF_FILE] || [_file_exists $VCD_FILE]} {
     }
 
     # 复位
-    if {[sizeof_collection [get_ports rst_n]] > 0} {
-        set_switching_activity -static_probability 1.0 -toggle_rate 0.01 [get_ports rst_n]
+    set rst_port [get_ports rst_n]
+    if {[sizeof_collection $rst_port] > 0} {
+        set_switching_activity -static_probability 1.0 -toggle_rate 0.01 $rst_port
     }
 
     # 其余输入
-    set_switching_activity -static_probability 0.5 -toggle_rate 1.0 [all_inputs]
+    set data_inputs [remove_from_collection [all_inputs] [list $clk_ports $rst_port]]
+    if {[sizeof_collection $data_inputs] > 0} {
+        set_switching_activity -static_probability 0.5 -toggle_rate 1.0 $data_inputs
+    }
 
     # 输出 & 内部节点
     set_switching_activity -static_probability 0.5 -toggle_rate 1.0 [all_outputs]
@@ -133,11 +149,10 @@ if {[_file_exists $SAIF_FILE] || [_file_exists $VCD_FILE]} {
 }
 }
 
-
-
 ##############################################################################
 # 5. 收尾
 ##############################################################################
+flush $fileToWrite
 close $fileToWrite
-puts "Generated conservative Pre-CTS script: $outputfile"
-puts "Run:  dc_shell -f $outputfile | tee ./report/script.log"
+puts "Generated conservative Pre-CTS script: [file normalize $outputfile]"
+puts "Run:  dc_shell -f $outputfile | tee ../report/script.log"
