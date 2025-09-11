@@ -175,6 +175,14 @@ if {$use_enhanced} {
   }
 }
 }
+puts $fileToWrite {
+  # --- DC-safe: Force clocks to use derived/propagated activity by clearing annotations ---
+  # 原理：清除时钟源上的注释切换率/静态概率，让 DC 使用推导值（避免将 1.0 覆盖到实际 ~0.235 的冲突）
+  set _clk_srcs [get_attribute [get_clocks *] sources]
+  if {[sizeof_collection $_clk_srcs] > 0} {
+      catch { reset_switching_activity $_clk_srcs }
+  }
+}
 
 puts $fileToWrite "\n# =================== End of Enhanced Power Analysis ==================="
 puts $fileToWrite "\nputs \"\nINFO: Synthesis and Power Analysis Script finished.\""
