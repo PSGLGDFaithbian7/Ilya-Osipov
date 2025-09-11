@@ -89,7 +89,6 @@ if {[sizeof_collection $clks] == 0} {
 }
 }
 
-# --- Section 5: Enhanced Power Analysis ---
 puts $fileToWrite "\n# ===================== Power Analysis — Enhanced ====================="
 puts $fileToWrite {
 # If the POWER_PROFILE environment variable is set to "basic", revert to basic analysis; otherwise, perform enhanced analysis.
@@ -106,7 +105,7 @@ set TOP_INSTANCE          $top_module
 # Default to high effort
 set POWER_ANALYSIS_EFFORT   high
 # Initial unit is toggles per cycle; switch to per second if SAIF/VCD is read
-set_power_analysis_options -toggle_rate_unit toggles_per_cycle
+catch { set_power_analysis_options -toggle_rate_unit toggles_per_cycle } ;# FIX: avoid unknown command in DC
 
 # Heuristic values (used only when no SAIF/VCD is available)
 set DATA_STATIC_PROB        0.5
@@ -118,12 +117,12 @@ set OUT_TOGGLE_PER_CYCLE    0.10
 proc _file_exists {f} {expr {[string length $f]>0 && [file exists $f]}}
 
 # Uniformly reset activity information
-reset_switching_activity [current_design]
+catch { reset_switching_activity [current_design] } ;# FIX: avoid CMD-036 on object_list
 
 if {$use_enhanced} {
   if { [_file_exists $SAIF_FILE] || [_file_exists $VCD_FILE] } {
       # Read external waveform: switch unit to toggles per second
-      set_power_analysis_options -toggle_rate_unit toggles_per_second
+      catch { set_power_analysis_options -toggle_rate_unit toggles_per_second } ;# FIX: avoid unknown command in DC
       if { [_file_exists $SAIF_FILE] } {
           read_saif -input $SAIF_FILE -instance $TOP_INSTANCE -verbose
       } elseif { [_file_exists $VCD_FILE] } {
@@ -152,7 +151,7 @@ if {$use_enhanced} {
           set_switching_activity -static_probability $DATA_STATIC_PROB -toggle_rate $DATA_TOGGLE_PER_CYCLE $data_in
       }
       # Register Q pins
-      set qpins [all_registers -q_pins]
+      set qpins [get_pins -of_objects [all_registers]] ;# FIX: replace unsupported -q_pins
       if {[sizeof_collection $qpins] > 0} {
           set_switching_activity -static_probability 0.5 -toggle_rate $QPIN_TOGGLE_PER_CYCLE $qpins
       }
@@ -176,6 +175,7 @@ if {$use_enhanced} {
   }
 }
 }
+
 puts $fileToWrite "\n# =================== End of Enhanced Power Analysis ==================="
 puts $fileToWrite "\nputs \"\nINFO: Synthesis and Power Analysis Script finished.\""
 puts "Successfully generated '$fileToWrite'."
