@@ -36,6 +36,8 @@ if [catch {redirect ../report/report.check_beforecompile {check_design}} cd_stat
     puts "Check Design Pass before compile!"
 }
 }
+# 方式B（命令风格）：取当前设计对象，再转成字符串
+puts $fileToWrite {set top_module [get_object_name [current_design]]}
 
 puts $fileToWrite "\n#********************Compile*******************}"
 puts $fileToWrite {compile_ultra -no_autoungroup -no_seq_output_inversion -no_boundary_optimization -gate_clock}
