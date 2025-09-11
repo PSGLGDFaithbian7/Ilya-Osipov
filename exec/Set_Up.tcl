@@ -202,7 +202,7 @@ if {[llength $syntheticLibraries] > 0} {
     puts $fileToWrite "set_app_var synthetic_library \"[join $syntheticLibraries " "]\""
 }
 
-puts $fileToWrite ""
+puts $fileToWrite {set_app_var synlib_wait_for_design_license [list "DesignWare-Foundation"]}
 puts $fileToWrite "# Top module: $top_module"
 
 close $fileToWrite

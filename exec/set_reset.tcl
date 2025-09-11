@@ -30,13 +30,10 @@ while {[gets $fileToRead line] >= 0} {
 
 }
 
-
  puts $fileToWrite "set_dont_touch_network 				\[get_ports [list {*}$RST_NAME]\]"
  puts $fileToWrite "set_false_path -from   				\[get_ports [list {*}$RST_NAME]\]" 
  puts $fileToWrite "set_ideal_network -no_propagate     \[get_ports [list {*}$RST_NAME]\]"
  puts $fileToWrite "set_drive 0            				\[get_ports [list {*}$RST_NAME]\]"
         
-
-
 close $fileToWrite
 close $fileToRead
