@@ -38,7 +38,7 @@ if [catch {redirect ../report/report.check_beforecompile {check_design}} cd_stat
 }
 }
 
-
+puts $fileToWrite {set top_module [get_object_name [current_design]]}
 # --- Section 3: Compile ---
 puts $fileToWrite "\n# ---------------- Compile (DW enabled + capture log) ----------------"
 puts $fileToWrite {
