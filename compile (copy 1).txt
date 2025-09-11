@@ -1,0 +1,519 @@
+#!/usr/bin/env tclsh
+
+# === 生成器：写出 ./work/script.tcl ===
+
+file mkdir ./work
+
+set outputfile "./work/script.tcl"
+
+set fh [open $outputfile a] ;# 如需追加请改 "a"
+
+
+
+puts $fh {
+
+########################################################################
+
+# DC Synthesis – Pre-CTS, Area-lean without sacrificing 250MHz timing
+
+# - 多时钟域友好；datapath-heavy；S-2021.06 兼容
+
+# - 不做 A/B 切换，直接采用面积友好且时序安全的设置
+
+########################################################################
+
+# 目录准备（假设从 ./work 目录运行本脚本）
+
+file mkdir ../report
+
+file mkdir ../output
+
+file mkdir ../activity
+
+
+
+# 顶层设计名
+
+set top_module [get_object_name [current_design]]
+
+if {[string length $top_module] == 0} {
+
+  puts "ERROR: current_design is empty. Please set current_design before running."
+
+  exit 1
+
+}
+
+
+
+########################################################################
+
+# 常规综合设置（面积友好 & 时序安全）
+
+########################################################################
+
+set_fix_multiple_port_nets -feedthrough   [get_designs *]
+
+set_fix_multiple_port_nets -all -buffer_constants [get_designs *]
+
+
+
+# 功耗优化开启（可能轻微增面积，但后续会用增量收敛回收）
+
+set_leakage_optimization  true
+
+set_dynamic_optimization  true
+
+
+
+# 面积限制：保持 0（由时序与约束主导），不强推太小的 max_area
+
+set_max_area 0
+
+
+
+# 结构化优化：开启 boolean 增益控制/逻辑重写（对面积友好）
+
+# 之前是 -boolean false，这里改为 true
+
+set_structure true -timing true -boolean true
+
+
+
+# 保留层次（不全局 flatten），但允许跨边界优化（后续 compile 不再加 -no_boundary_optimization）
+
+set_flatten false
+
+
+
+# 若需要 DW（你已将 DW 放入 synthetic_library），补充以下开关与路径
+
+# （注意：脚本从 ./work 运行，DW 位于与 work 同级的 ./lib）
+
+if {[file isdirectory "../lib"]} {
+
+  set_app_var hdlin_enable_dw true
+
+  set_app_var hdlin_dwroot     ../lib
+
+  # 如需稳妥，可在未包含时追加 sldb（可根据你库实际命名调整）
+
+  if {[file exists "../lib/dw_foundation.sldb"]} {
+
+    if {![info exists synthetic_library]} { set synthetic_library "" }
+
+    if {[lsearch -exact $synthetic_library ../lib/dw_foundation.sldb] < 0} {
+
+      set_app_var synthetic_library [concat $synthetic_library [list ../lib/dw_foundation.sldb]]
+
+      puts "INFO: Added ../lib/dw_foundation.sldb into synthetic_library."
+
+    }
+
+  }
+
+}
+
+
+
+# 优先将多周期/IO等真实约束补齐（如有），以下为占位注释：
+
+# set_driving_cell -lib_cell <LIB>/<BUF_CELL> [all_inputs]
+
+# set_load <C_LOAD_FF> [all_outputs]
+
+
+
+########################################################################
+
+# 编译前检查
+
+########################################################################
+
+if {[catch {redirect ../report/${top_module}_check_before_compile.rpt {check_design}} cd_status]} {
+
+  puts "Check Design Error before compile: $cd_status"
+
+  exit 1
+
+} else {
+
+  puts "Check Design Pass before compile!"
+
+}
+
+
+
+########################################################################
+
+# 时钟门控风格：优先使用 ICG；设较大最小位宽，减少 ICG 个数（省面积）
+
+########################################################################
+
+if {[catch {set_clock_gating_style -positive_edge_logic integrated}]} {
+
+  puts "INFO: No ICG integrated cell found; falling back to latch-based CG."
+
+  # 回退方案：使用锁存式门控
+
+  set_clock_gating_style -sequential_cell latch -minimum_bitwidth 3 -control_point before
+
+} else {
+
+  # 有 ICG：提高门控阈值，避免在小位宽上插 ICG
+
+  set_clock_gating_style -minimum_bitwidth 8 -control_point before
+
+}
+
+
+
+########################################################################
+
+# 时钟与活动（保留你原有的 vectorless 逻辑，仅做拼写/稳健性微调）
+
+########################################################################
+
+# 若未定义 CLOCK_PERIOD，则给默认 4ns（≈250MHz）
+
+if {![info exists CLOCK_PERIOD]} { set CLOCK_PERIOD 4.0 }
+
+
+
+# 若无时钟且有 'clk' 端口则创建默认时钟；否则复用已有
+
+set clks [get_clocks *]
+
+if {[sizeof_collection $clks] == 0} {
+
+  set _clk_port [get_ports -quiet clk]
+
+  if {[sizeof_collection $_clk_port] > 0} {
+
+    create_clock -period $CLOCK_PERIOD $_clk_port
+
+    puts "INFO: No clock found. Created default clock with period=$CLOCK_PERIOD."
+
+  } else {
+
+    puts "WARN: No clock found and no 'clk' port to bind. Power may be less accurate."
+
+  }
+
+} else {
+
+  puts "INFO: Reusing existing clock(s) as-is for power estimation."
+
+}
+
+
+
+# === 可调参数（按 GPU 算术单元“较活跃”调优）====
+
+set ALPHA_DATA   0.18   ;# 数据/总线类输入
+
+set ALPHA_CTRL   0.06   ;# 控制/握手类输入
+
+set ALPHA_RST    1e-6   ;# rst_n 几乎不翻转
+
+set SP_DEFAULT   0.5
+
+set INPUT_TR_ns  0.6
+
+set CLAMP_RATIO  0.80
+
+set F_FALLBACK_HZ 2.5e8 ;# 250MHz 兜底
+
+
+
+proc __get_fastest_freq_hz {} {
+
+  set clks [get_clocks *]
+
+  if {[sizeof_collection $clks] > 0} {
+
+    set minp 0.0
+
+    foreach c [get_object_name $clks] {
+
+      set p [get_attribute [get_clocks $c] period]
+
+      if {$p > 0.0 && ($minp == 0.0 || $p < $minp)} { set minp $p }
+
+    }
+
+    if {$minp > 0.0} { return [expr {1.0e9 / $minp}] }
+
+  }
+
+  return $::F_FALLBACK_HZ
+
+}
+
+
+
+proc __apply_tr_per_sec {objs alpha {sp 0.5}} {
+
+  if {[llength $objs] == 0} {return}
+
+  set f  [__get_fastest_freq_hz]
+
+  set tr [expr {$alpha * $f}]
+
+  set max [expr {$::CLAMP_RATIO * $f}]
+
+  if {$tr > $max} { set tr $max }
+
+  set_switching_activity -static_probability $sp -toggle_rate $tr $objs
+
+}
+
+
+
+proc __get_all_clock_sources {} {
+
+  set _clk_srcs {}
+
+  foreach c [get_object_name [get_clocks *]] {
+
+    set srcs [get_attribute [get_clocks $c] sources]
+
+    if {[sizeof_collection $srcs] > 0} {
+
+      set _clk_srcs [add_to_collection $_clk_srcs $srcs]
+
+    }
+
+  }
+
+  return $_clk_srcs
+
+}
+
+
+
+# 输入过渡：排除所有时钟源与 rst_n
+
+set _all_in   [all_inputs]
+
+set _rstn     [get_ports -quiet rst_n]
+
+set _clk_srcs [__get_all_clock_sources]
+
+set _excl     $_clk_srcs
+
+if {[sizeof_collection $_rstn] > 0} { set _excl [add_to_collection $_excl $_rstn] }
+
+set _nonideal_in [remove_from_collection $_all_in $_excl]
+
+if {[sizeof_collection $_nonideal_in] > 0} {
+
+  set_input_transition $INPUT_TR_ns $_nonideal_in
+
+}
+
+
+
+# 活动来源：优先 SAIF/VCD；否则 vectorless
+
+set ACTIVITY_DIR ../activity
+
+set SAIF_FILE "$ACTIVITY_DIR/${top_module}.saif"
+
+set VCD_FILE  "$ACTIVITY_DIR/${top_module}.vcd"
+
+set TOP_INSTANCE $top_module
+
+set use_vectorless 1
+
+
+
+if {[file exists $ACTIVITY_DIR]} {
+
+  if {[file exists $SAIF_FILE]} {
+
+    set use_vectorless 0
+
+    read_saif -input $SAIF_FILE -instance $TOP_INSTANCE -verbose
+
+  } elseif {[file exists $VCD_FILE]} {
+
+    set _tmp ../report/_vcd2saif_${top_module}.saif
+
+    if {![catch {sh vcd2saif -input $VCD_FILE -output $_tmp -instance $TOP_INSTANCE}]} {
+
+      set use_vectorless 0
+
+      read_saif -input $_tmp -instance $TOP_INSTANCE -verbose
+
+      file delete -force $_tmp
+
+    } else {
+
+      puts "WARN: vcd2saif failed; fall back to vectorless."
+
+    }
+
+  }
+
+} else {
+
+  puts "WARNING: Directory $ACTIVITY_DIR not found — switch to vectorless"
+
+}
+
+
+
+if {$use_vectorless} {
+
+  # 降低默认切换率，避免不注释起点导致的不现实功耗假设
+
+  set_app_var power_default_toggle_rate          0.03
+
+  set_app_var power_default_static_probability   0.5
+
+
+
+  # 1) rst_n（低有效）：多数时间高电平，几乎不翻转
+
+  if {[sizeof_collection $_rstn] > 0} {
+
+    __apply_tr_per_sec $_rstn $ALPHA_RST 1.0
+
+  }
+
+  # 2) 仅给“主输入端口”种子活动（排除所有时钟源与 rst_n）
+
+  set _data_in [remove_from_collection [all_inputs] $_excl]
+
+  if {[sizeof_collection $_data_in] > 0} {
+
+    set data_ports {}
+
+    set ctrl_ports {}
+
+    foreach p [get_object_name $_data_in] {
+
+      set w 1
+
+      if {![catch {get_attribute [get_ports $p] bit_width} _w]} { set w $_w }
+
+      set name $p
+
+      if {$w >= 8} {
+
+        lappend data_ports $p
+
+      } elseif {[regexp -nocase {(valid|ready|en|enable|req|ack|we|re|cs|sel|start|done|irq|int|stall|idle|busy)} $name]} {
+
+        lappend ctrl_ports $p
+
+      } elseif {[regexp -nocase {(data|din|ain|bin|xin|yin|src|vec|bus|pix|coef|coeff|input|val_in)} $name]} {
+
+        lappend data_ports $p
+
+      } else {
+
+        lappend ctrl_ports $p
+
+      }
+
+    }
+
+    if {[llength $data_ports]} { __apply_tr_per_sec [get_ports $data_ports] $ALPHA_DATA $SP_DEFAULT }
+
+    if {[llength $ctrl_ports]} { __apply_tr_per_sec [get_ports $ctrl_ports] $ALPHA_CTRL $SP_DEFAULT }
+
+  }
+
+  puts "INFO: Vectorless seeding done (inputs only; multi-clock safe; datapath-heavy tuned)."
+
+}
+
+
+
+########################################################################
+
+# 编译
+
+# - 去掉 -no_boundary_optimization，允许跨层优化共享（降面积）
+
+# - 保留 -no_autoungroup：不全局解层，风险低
+
+########################################################################
+
+if {[catch {
+
+  compile_ultra -no_autoungroup -no_seq_output_inversion -gate_clock
+
+} comp_err]} {
+
+  puts "Compile failed: $comp_err"
+
+  redirect -variable ERRMSG {report_messages -severity {FATAL ERROR}}
+
+  puts $ERRMSG
+
+  exit 1
+
+}
+
+
+
+# 增量面积收敛（在时序满足的前提下回收过度上尺寸）
+
+set _COST_SAVED [get_cost_priority]
+
+set_cost_priority area
+
+compile_ultra -incremental
+
+set_cost_priority $_COST_SAVED
+
+
+
+########################################################################
+
+# 收尾与报告
+
+########################################################################
+
+change_name -rules sverilog -hierarchy
+
+
+
+# 报告面积（按层次/按参考），便于你定位大户
+
+redirect ../report/${top_module}_area_by_hier.rpt { report_area -hierarchy }
+
+redirect ../report/${top_module}_area_by_ref.rpt  { report_reference -hierarchy }
+
+
+
+# 多电压检查（命令存在才执行）
+
+if {[llength [info commands check_mv_design]]} {
+
+  redirect -file ../report/${top_module}_check_mv.rpt          { check_mv_design }
+
+  redirect -file ../report/${top_module}_check_mv_verbose.rpt  { check_mv_design -verbose }
+
+}
+
+
+
+puts "INFO: Synthesis done. Reports in ../report"
+
+}
+
+
+
+# === 收尾：关闭文件 ===
+
+flush $fh
+
+close $fh
+
+
+
+puts "OK: Generated ./work/script.tcl"
