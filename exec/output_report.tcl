@@ -46,48 +46,56 @@ puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_check_mv.rpt  
 puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_check_mv_verbose.rpt  { check_mv_design -verbose }"
 
 # ---------------- Reports (QoR/Area/Power/CG) ----------------
-puts $fileToWrite "\n# ---------------- Reports (QoR/Area/Power/CG) ----------------"
-puts $fileToWrite "file mkdir ../report"
-puts $fileToWrite "# 已于上方生成 power_summary，这里保留一份常规合集"
-puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.qor             { report_qor -nosplit }"
-puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.area            { report_area -hierarchy -nosplit }"
-puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.power           { report_power -hierarchy -analysis_effort high -nosplit }"
-puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_report.clock_gating    { report_clock_gating -structure -verbose -nosplit }"
+file mkdir ../report
+# 已于上方生成 power_summary，这里保留一份常规合集
+redirect -file ../report/${top_module}_${DATE}_report.qor             { report_qor -nosplit }
+redirect -file ../report/${top_module}_${DATE}_report.area            { report_area -hierarchy -nosplit }
+redirect -file ../report/${top_module}_${DATE}_report.power           { report_power -hierarchy -analysis_effort high -nosplit }
+redirect -file ../report/${top_module}_${DATE}_report.clock_gating    { report_clock_gating -structure -verbose -nosplit }
+
+# Add from script2: more detailed timing reports
+redirect -file ../report/${top_module}_${DATE}_report.timing         {check_timing}
+redirect -file ../report/${top_module}_${DATE}_report.paths.max      {report_timing -path end  -delay max -max_paths 200 -nworst 2}
+redirect -file ../report/${top_module}_${DATE}_report.full_paths.max {report_timing -path full -input_pins -nets -transition_time -capacitance -attributes -delay max -max_paths 5 -nworst 2}
+redirect -file ../report/${top_module}_${DATE}_report.paths.min      {report_timing -path end  -delay min -max_paths 200 -nworst 2}
+redirect -file ../report/${top_module}_${DATE}_report.full_paths.min {report_timing -path full -input_pins -nets -transition_time -capacitance -attributes -delay min -max_paths 5 -nworst 2}
+redirect -file ../report/${top_module}_${DATE}_report.refs           {report_reference}
 
 # ---------------- Outputs (Netlist/SDC/SDF/Parasitics) ----------------
-puts $fileToWrite "\n# ---------------- Outputs (Netlist/SDC/SDF/Parasitics) ----------------"
-puts $fileToWrite "change_names -rules sverilog -hierarchy"
-puts $fileToWrite "write      -format verilog -hierarchy -output ../output/${top_module}_${DATE}.v"
-puts $fileToWrite "write_sdc  ../output/${top_module}_${DATE}.sdc"
-puts $fileToWrite "write      -format ddc     -hierarchy -output ../output/${top_module}_${DATE}_compile.ddc"
-puts $fileToWrite "write_sdf  ../output/${top_module}_${DATE}.sdf"
+change_names -rules sverilog -hierarchy
+write      -format verilog -hierarchy -output ../output/${top_module}_${DATE}.v
+write_sdc  ../output/${top_module}_${DATE}.sdc
+write      -format ddc     -hierarchy -output ../output/${top_module}_${DATE}_compile.ddc
+write_sdf  ../output/${top_module}_${DATE}.sdf
 
 # Parasitic (non-signoff)
-puts $fileToWrite "\n# Parasitic (non-signoff)"
-puts $fileToWrite "set _rc_out ../output/${top_module}_${DATE}.rc"
-puts $fileToWrite "if {[catch {write_parasitics -format reduced     -output \$_rc_out} wp_err]} {"
-puts $fileToWrite "  puts \"WARN: write_parasitics reduced failed: \$wp_err\""
-puts $fileToWrite "  if {[catch {write_parasitics -format distributed -output \$_rc_out} wp_err2]} {"
-puts $fileToWrite "    puts \"ERROR: write_parasitics failed (distributed): \$wp_err2\""
-puts $fileToWrite "  } else {"
-puts $fileToWrite "    puts \"INFO: Parasitics written in distributed format: \$_rc_out\""
-puts $fileToWrite "  }"
-puts $fileToWrite "} else {"
-puts $fileToWrite "  puts \"INFO: Parasitics written in reduced format: \$_rc_out\""
-puts $fileToWrite "}"
+set _rc_out ../output/${top_module}_${DATE}.rc
+if {[catch {write_parasitics -format reduced     -output $_rc_out} wp_err]} {
+  puts "WARN: write_parasitics reduced failed: $wp_err"
+  if {[catch {write_parasitics -format distributed -output $_rc_out} wp_err2]} {
+    puts "ERROR: write_parasitics failed (distributed): $wp_err2"
+  } else {
+    puts "INFO: Parasitics written in distributed format: $_rc_out"
+  }
+} else {
+  puts "INFO: Parasitics written in reduced format: $_rc_out"
+}
+
+# Add from script2: check_mv_design
+check_mv_design > ../report/${top_module}_${DATE}_check_mv_design.txt
+check_mv_design -verbose > ../report/${top_module}_${DATE}_check_mv_verbose_design.txt
+
 
 # Close SVF
-puts $fileToWrite "\n# Close SVF"
-puts $fileToWrite "set_svf -off"
+set_svf -off
 
 # Quick summary bundle
-puts $fileToWrite "\n# Quick summary bundle"
-puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_area_recovery.log {"
-puts $fileToWrite "  report_qor -nosplit"
-puts $fileToWrite "  report_area -hierarchy -nosplit"
-puts $fileToWrite "  report_power -hierarchy -analysis_effort high -nosplit"
-puts $fileToWrite "}"
-puts $fileToWrite ""
-puts $fileToWrite "puts \"DONE. Netlist/SDC/SDF/RC and reports are under ../output and ../report.\""
+redirect -file ../report/${top_module}_${DATE}_area_recovery.log {
+  report_qor -nosplit
+  report_area -hierarchy -nosplit
+  report_power -hierarchy -analysis_effort high -nosplit
+}
+
+puts "DONE. Netlist/SDC/SDF/RC and reports are under ../output and ../report."
 
 close $fileToWrite
