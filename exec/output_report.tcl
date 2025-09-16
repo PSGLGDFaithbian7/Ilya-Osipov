@@ -88,9 +88,7 @@ redirect -file $repRoot/timing/${top_module}_constraints_violators.rpt {
 redirect -file $repRoot/clock/${top_module}_clocks.rpt {
   report_clocks -attributes -nosplit
 }
-redirect -file $repRoot/clock/${top_module}_clock_trees.rpt {
-  report_clock_trees -verbose -nosplit
-}
+
 redirect -file $repRoot/clock/${top_module}_clock_gating_detailed.rpt {
   report_clock_gating -verbose -nosplit
 }

@@ -59,7 +59,7 @@ set fileToWrite [open ./work/script.tcl w]
 
 puts $fileToWrite {
 set_app_var sh_continue_on_error      false
-set_app_var sh_output_log_stack_trace true
+set sh_output_log_stack_trace true
 
 ########### define if_cmd  #####################################
 proc cmd_exists {name} { expr {[llength [info commands $name]] > 0} }
