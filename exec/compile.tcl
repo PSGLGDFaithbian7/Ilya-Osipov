@@ -89,13 +89,16 @@ if {[sizeof_collection $nonideal_inputs] > 0} {
 
 puts $fileToWrite {
 # ===================== Power Analysis (Clean) =====================
-# Use vectorless heuristics if no SAIF/VCD. No unsupported options.
+# 策略：优先用 SAIF/VCD；否则用向量无关“max”上限，适合 pre-CTS 功耗预算
 set ACTIVITY_DIR ../activity
 set SAIF_FILE "$ACTIVITY_DIR/${top_module}.saif"
 set VCD_FILE  "$ACTIVITY_DIR/${top_module}.vcd"
 set TOP_INSTANCE $top_module
 
-# Prefer SAIF; fallback to VCD->SAIF; else vectorless
+# ------ ① 先拿时钟端口，供后面复用 ------
+set clk_ports [get_ports -filter "direction==in" [get_attribute [get_clocks *] sources]]
+
+# 优先读 SAIF；没有就试 VCD→SAIF；都没有就向量无关
 if {[file exists $SAIF_FILE]} {
   if_cmd read_saif -input $SAIF_FILE -instance $TOP_INSTANCE -verbose
 } elseif {[file exists $VCD_FILE]} {
@@ -107,41 +110,41 @@ if {[file exists $SAIF_FILE]} {
     puts "WARN: vcd2saif failed; fall back to vectorless heuristics"
   }
 } else {
-  puts "INFO: No SAIF/VCD found — using vectorless heuristics"
-  # Clock: 1 toggle/cycle
-  set clk_ports [get_attribute [get_clocks *] sources]
+  puts "INFO: No SAIF/VCD found — using vectorless MAX-toggling for pre-CTS budget"
+  
+  # 时钟：理想网络，每周期必翻 → toggle rate = 1.0
   if {[sizeof_collection $clk_ports] > 0} {
     set_switching_activity -static_probability 0.5 -toggle_rate 1.0 $clk_ports
   }
-  # Reset: very low toggle rate
+  
+  # 复位：几乎不动 → 0.01
   if {[sizeof_collection [get_ports rst_n]] > 0} {
     set_switching_activity -static_probability 1.0 -toggle_rate 0.01 [get_ports rst_n]
   }
-  # Data inputs
+  
+  # 数据输入：满载猝发上限 0.30
   set data_in [remove_from_collection [all_inputs] [list $clk_ports [get_ports rst_n]]]
   if {[sizeof_collection $data_in] > 0} {
-    set_switching_activity -static_probability 0.5 -toggle_rate 0.20 $data_in
+    set_switching_activity -static_probability 0.5 -toggle_rate 0.30 $data_in
+    # ← 修改：pre-CTS 用 max 值，每 3~4 周期翻一次
   }
-  # Register Q pins
+  
+  # 寄存器 Q：pipeline 满载几乎全翻 → 0.80
   set qpins [get_pins -of_objects [all_registers]]
   if {[sizeof_collection $qpins] > 0} {
-    set_switching_activity -static_probability 0.5 -toggle_rate 0.10 $qpins
+    set_switching_activity -static_probability 0.5 -toggle_rate 0.80 $qpins
+    # ← 修改：max 上限，保守估峰值电流
   }
-  # Top-level outputs
+  
+  # 顶层输出：下游每周期采 → 0.40
   if {[sizeof_collection [all_outputs]] > 0} {
-    set_switching_activity -static_probability 0.5 -toggle_rate 0.10 [all_outputs]
+    set_switching_activity -static_probability 0.5 -toggle_rate 0.40 [all_outputs]
+    # ← 修改：max 上限
   }
 }
-
-# Reports (guard any possibly-missing command)
-redirect -file ../report/${top_module}_${DATE}_power_summary.rpt {
-  report_power -hier -analysis_effort high -nosplit
-}
-if_cmd report_switching_activity -hierarchy -summary -nosplit
 }
 
 puts $fileToWrite "\n# =================== End of Power Analysis ==================="
-
 
 
 flush $fileToWrite
