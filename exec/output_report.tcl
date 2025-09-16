@@ -1,5 +1,4 @@
 #!/usr/bin/env tclsh
-
 ## Check/prepare directories
 foreach dir {work output report setup} {
     if {![file exists ./$dir]} {
@@ -40,62 +39,98 @@ if {$top_module eq ""} {
 # ==================== Generate Script Content ==================== #
 # —— 注意：以下字符串中的 ${top_module} 与 ${DATE} 在“生成阶段”即被替换为固定值 —— #
 
-# ---------------- Multi-Voltage Checks ----------------
-puts $fileToWrite "\n# ---------------- Multi-Voltage Checks ----------------"
-puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_check_mv.rpt          { check_mv_design }"
-puts $fileToWrite "redirect -file ../report/${top_module}_${DATE}_check_mv_verbose.rpt  { check_mv_design -verbose }"
+puts $fileToWrite  {
+##############################################################################
+#  完整体系（含 power 子目录）
+#  ../report/<YYYYMMDD_HHMMSS>/{timing,power,area,clock,mv}
+#  ../output/<YYYYMMDD_HHMMSS>/{verilog,sdc,ddc,sdf,parasitics}
+##############################################################################
 
-# ---------------- Reports (QoR/Area/Power/CG) ----------------
-file mkdir ../report
-# 已于上方生成 power_summary，这里保留一份常规合集
-redirect -file ../report/${top_module}_${DATE}_report.qor             { report_qor -nosplit }
-redirect -file ../report/${top_module}_${DATE}_report.area            { report_area -hierarchy -nosplit }
-redirect -file ../report/${top_module}_${DATE}_report.power           { report_power -hierarchy -analysis_effort high -nosplit }
-redirect -file ../report/${top_module}_${DATE}_report.clock_gating    { report_clock_gating -structure -verbose -nosplit }
+set DATE [clock format [clock seconds] -format "%Y%m%d_%H%M%S"]
+set repRoot "../report/$DATE"
+set outRoot "../output/$DATE"
 
-# Add from script2: more detailed timing reports
-redirect -file ../report/${top_module}_${DATE}_report.timing         {check_timing}
-redirect -file ../report/${top_module}_${DATE}_report.paths.max      {report_timing -path end  -delay max -max_paths 200 -nworst 2}
-redirect -file ../report/${top_module}_${DATE}_report.full_paths.max {report_timing -path full -input_pins -nets -transition_time -capacitance -attributes -delay max -max_paths 5 -nworst 2}
-redirect -file ../report/${top_module}_${DATE}_report.paths.min      {report_timing -path end  -delay min -max_paths 200 -nworst 2}
-redirect -file ../report/${top_module}_${DATE}_report.full_paths.min {report_timing -path full -input_pins -nets -transition_time -capacitance -attributes -delay min -max_paths 5 -nworst 2}
-redirect -file ../report/${top_module}_${DATE}_report.refs           {report_reference}
-
-# ---------------- Outputs (Netlist/SDC/SDF/Parasitics) ----------------
-change_names -rules sverilog -hierarchy
-write      -format verilog -hierarchy -output ../output/${top_module}_${DATE}.v
-write_sdc  ../output/${top_module}_${DATE}.sdc
-write      -format ddc     -hierarchy -output ../output/${top_module}_${DATE}_compile.ddc
-write_sdf  ../output/${top_module}_${DATE}.sdf
-
-# Parasitic (non-signoff)
-set _rc_out ../output/${top_module}_${DATE}.rc
-if {[catch {write_parasitics -format reduced     -output $_rc_out} wp_err]} {
-  puts "WARN: write_parasitics reduced failed: $wp_err"
-  if {[catch {write_parasitics -format distributed -output $_rc_out} wp_err2]} {
-    puts "ERROR: write_parasitics failed (distributed): $wp_err2"
-  } else {
-    puts "INFO: Parasitics written in distributed format: $_rc_out"
-  }
-} else {
-  puts "INFO: Parasitics written in reduced format: $_rc_out"
+foreach dir [list \
+    $repRoot/timing  $repRoot/power  $repRoot/area  $repRoot/clock  $repRoot/mv \
+    $outRoot/verilog $outRoot/sdc    $outRoot/ddc   $outRoot/sdf    $outRoot/parasitics] {
+    file mkdir $dir
 }
 
-# Add from script2: check_mv_design
-check_mv_design > ../report/${top_module}_${DATE}_check_mv_design.txt
-check_mv_design -verbose > ../report/${top_module}_${DATE}_check_mv_verbose_design.txt
+# ------------------------------------------------------------------
+# 1. 报告输出（含 power 子目录）
+# ------------------------------------------------------------------
+# 基本 QoR / 面积 / 功耗 / 时钟门控
+redirect -file $repRoot/area/${top_module}_report.qor          { report_qor -nosplit }
+redirect -file $repRoot/area/${top_module}_report.area         { report_area -hierarchy -nosplit }
+redirect -file $repRoot/power/${top_module}_report.power       { report_power -hierarchy -analysis_effort high -nosplit }
+redirect -file $repRoot/clock/${top_module}_report.clock_gating { report_clock_gating -structure -verbose -nosplit }
 
+# ---- power 额外报告（融入体系） ----
+redirect -file $repRoot/power/${top_module}_power_summary.rpt {
+  report_power -hier -analysis_effort high -nosplit
+}
+if_cmd report_switching_activity -hierarchy -summary -nosplit
 
-# Close SVF
+# Multi-Voltage
+redirect -file $repRoot/mv/${top_module}_check_mv.rpt          { check_mv_design }
+redirect -file $repRoot/mv/${top_module}_check_mv_verbose.rpt  { check_mv_design -verbose }
+
+# 详细时序
+redirect -file $repRoot/timing/${top_module}_timing_setup.rpt {
+  report_timing -delay_type max -max_paths 50 -path full_clock_expanded -sort_by slack -nosplit
+}
+redirect -file $repRoot/timing/${top_module}_timing_hold.rpt {
+  report_timing -delay_type min -max_paths 50 -path full_clock_expanded -sort_by slack -nosplit
+}
+redirect -file $repRoot/timing/${top_module}_constraints_violators.rpt {
+  report_constraints -all_violators -nosplit
+}
+redirect -file $repRoot/clock/${top_module}_clocks.rpt {
+  report_clocks -attributes -nosplit
+}
+redirect -file $repRoot/clock/${top_module}_clock_trees.rpt {
+  report_clock_trees -verbose -nosplit
+}
+redirect -file $repRoot/clock/${top_module}_clock_gating_detailed.rpt {
+  report_clock_gating -verbose -nosplit
+}
+
+# ------------------------------------------------------------------
+# 2. 网表/约束/SDF/寄生参数 输出
+# ------------------------------------------------------------------
+change_names -rules sverilog -hierarchy
+
+write -format verilog -hierarchy -output $outRoot/verilog/${top_module}.v
+write_sdc  $outRoot/sdc/${top_module}.sdc
+write -format ddc -hierarchy -output $outRoot/ddc/${top_module}_compile.ddc
+write_sdf  $outRoot/sdf/${top_module}.sdf
+
+# 寄生
+set _rc_out $outRoot/parasitics/${top_module}.rc
+set wp_err [catch {write_parasitics -format reduced -output $_rc_out}]
+if {$wp_err} {
+    puts "WARN: write_parasitics reduced failed"
+    set wp_err2 [catch {write_parasitics -format distributed -output $_rc_out}]
+    if {$wp_err2} {
+        puts "ERROR: write_parasitics distributed also failed"
+    } else {
+        puts "INFO: Parasitics written in distributed format: $_rc_out"
+    }
+} else {
+    puts "INFO: Parasitics written in reduced format: $_rc_out"
+}
+
+# ------------------------------------------------------------------
+# 3. 收尾
+# ------------------------------------------------------------------
 set_svf -off
-
-# Quick summary bundle
-redirect -file ../report/${top_module}_${DATE}_area_recovery.log {
+redirect -file $repRoot/${top_module}_area_recovery.log {
   report_qor -nosplit
   report_area -hierarchy -nosplit
   report_power -hierarchy -analysis_effort high -nosplit
 }
 
-puts "DONE. Netlist/SDC/SDF/RC and reports are under ../output and ../report."
+puts "DONE. Reports -> $repRoot ;  Outputs -> $outRoot"
+}
 
 close $fileToWrite

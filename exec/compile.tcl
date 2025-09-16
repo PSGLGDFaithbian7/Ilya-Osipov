@@ -87,16 +87,13 @@ if {[sizeof_collection $nonideal_inputs] > 0} {
 }
 }
 
-# ===================== Power Analysis (Clean) =====================
 puts $fileToWrite {
+# ===================== Power Analysis (Clean) =====================
 # Use vectorless heuristics if no SAIF/VCD. No unsupported options.
 set ACTIVITY_DIR ../activity
 set SAIF_FILE "$ACTIVITY_DIR/${top_module}.saif"
 set VCD_FILE  "$ACTIVITY_DIR/${top_module}.vcd"
 set TOP_INSTANCE $top_module
-
-# Reset switching activity if available
-if_cmd reset_switching_activity [current_design]
 
 # Prefer SAIF; fallback to VCD->SAIF; else vectorless
 if {[file exists $SAIF_FILE]} {
@@ -142,30 +139,11 @@ redirect -file ../report/${top_module}_${DATE}_power_summary.rpt {
 }
 if_cmd report_switching_activity -hierarchy -summary -nosplit
 }
+
 puts $fileToWrite "\n# =================== End of Power Analysis ==================="
 
-# ===================== Timing Reports (Added) =====================
-puts $fileToWrite {
-# Detailed timing reports for better STA visibility
-redirect -file ../report/${top_module}_${DATE}_timing_setup.rpt {
-  report_timing -delay_type max -max_paths 50 -path full_clock_expanded -sort_by slack -nosplit
-}
-redirect -file ../report/${top_module}_${DATE}_timing_hold.rpt {
-  report_timing -delay_type min -max_paths 50 -path full_clock_expanded -sort_by slack -nosplit
-}
-redirect -file ../report/${top_module}_${DATE}_constraints_violators.rpt {
-  report_constraints -all_violators -nosplit
-}
-redirect -file ../report/${top_module}_${DATE}_clocks.rpt {
-  report_clocks -attributes -nosplit
-}
-# QoR summary if available
-if_cmd report_qor -summary
-}
-# =================== End of Timing Reports ===================
 
-puts $fileToWrite "\nputs \"\nINFO: Synthesis + Power + Timing reporting finished.\""
-puts "Successfully generated '$fileToWrite'."
+
 flush $fileToWrite
 close $fileToWrite
 puts "Conservative Pre-CTS script generated (no file output section)."

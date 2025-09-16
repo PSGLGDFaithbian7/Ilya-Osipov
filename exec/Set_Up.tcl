@@ -56,6 +56,19 @@ proc find_library_file {libname search_paths} {
 set fileToRead  [open ./setup/library.lst r]
 set fileToWrite [open ./work/script.tcl w]
 
+
+puts $fileToWrite {
+set_app_var sh_continue_on_error      false
+set_app_var sh_output_log_stack_trace true
+
+########### define if_cmd  #####################################
+proc cmd_exists {name} { expr {[llength [info commands $name]] > 0} }
+proc if_cmd {name args} {
+    if {[cmd_exists $name]} { uplevel 1 [list $name] {*}$args }
+}
+}
+
+
 # Initialize variables
 set search_path {}
 set library_file {}
