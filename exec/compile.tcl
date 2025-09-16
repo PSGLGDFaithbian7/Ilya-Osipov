@@ -62,7 +62,7 @@ redirect -file ../report/${top_module}_${DATE}_env.libs.rpt {
 }
 # Real compile with robust error capture
 set rc [catch {
-  redirect -file ../report/${top_module}_${DATE}_compile_ultra.log {
+  redirect -file ../log/${top_module}_${DATE}_compile_ultra.log {
     compile_ultra -no_autoungroup -no_seq_output_inversion -gate_clock
   }
 } comp_err]
