@@ -19,6 +19,15 @@ proc cmd_exists {name} { expr {[llength [info commands $name]] > 0} }
 proc if_cmd {name args} {
   if {[cmd_exists $name]} { uplevel 1 [list $name] $args }
 }
+
+# ---------------------------------------------------------
+网表输出设置
+# ---------------------------------------------------------
+set_app_var verilogout_no_tri               true ;
+set_app_var verilogout_show_unconnected_pins true ;
+set_app_var bus_naming_style           {%s[%d]} ;
+define_name_rules MY_RULES -allowed "A-Za-z0-9_" -first_restricted "0-9_" -max_length 256 -case_insensitive
+change_names -rules MY_RULES -hierarchy          ;
 }
 
 # Prevent assignment statements in the Verilog netlist.
@@ -37,6 +46,19 @@ puts $fileToWrite {set_max_area 0}
 puts $fileToWrite {set_structure true -timing true -boolean false}
 # Set clock gating style BEFORE compile (library may not have ICG cells)
 puts $fileToWrite {set_clock_gating_style -sequential_cell latch}
+
+puts $fileToWrite {
+# ---------------------------------------------------------
+# group_path
+# 时钟周期 150 MHz~250 MHz → 6.67 ns ~ 4 ns
+# ---------------------------------------------------------
+set CLK_PERIOD [get_attribute [get_clocks *] period]
+set CLK_NAME   [get_attribute [get_clocks *] full_name]
+group_path -name $CLK_NAME   -weight 5 -critical_range [expr $CLK_PERIOD * 0.10] ;# ← 新增
+group_path -name INPUTS      -weight 3 -critical_range [expr $CLK_PERIOD * 0.10] -from [all_inputs] ;# ← 新增
+group_path -name OUTPUTS     -weight 3 -critical_range [expr $CLK_PERIOD * 0.10] -to   [all_outputs] ;# ← 新增
+group_path -name COMB        -weight 2 -critical_range [expr $CLK_PERIOD * 0.10] -from [all_inputs] -to [all_outputs] ;# ← 新增
+# ---------------------------------------------------------}
 
 # Final check before compiling
 puts $fileToWrite {
@@ -63,7 +85,7 @@ redirect -file ../report/${top_module}_${DATE}_env.libs.rpt {
 # Real compile with robust error capture
 set rc [catch {
   redirect -file ../log/${top_module}_${DATE}_compile_ultra.log {
-    compile_ultra -no_autoungroup -no_seq_output_inversion -gate_clock
+    compile_ultra -no_autoungroup -no_boundary_optimization -gate_clock 
   }
 } comp_err]
 if {$rc} {

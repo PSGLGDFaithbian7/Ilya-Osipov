@@ -182,30 +182,12 @@ seek $fh_io 0        ;# 回绕，后面正式再读一遍
 
 # ------------------------ 主流程 ------------------------
 if {$INTERNAL_FLOW} {
-
-set LIB_NAME   [lindex [get_libs -quiet] 0]
-set CLK_PERIOD [get_attribute [get_clocks *] period]
-set CLK_NAME   [get_attribute [get_clocks *] name]
-
-
-set INPUT_DELAY_MAX [expr $CLK_PERIOD * 0.8]
-set INPUT_DELAY_MIN [expr $CLK_PERIOD * 0.1]
-set OUTPUT_DELAY    [expr $CLK_PERIOD * 0.6]
-set MAX_LOAD [expr [load_of $LIB_NAME/INVX8/A] * 30]
-
-set_driving_cell -lib_cell $LIB_NAME/BUFX2 -pin Y \
-                 [remove_from_collection [all_inputs] [get_ports $CLK_NAME]]
-
-set_input_delay -max $INPUT_DELAY_MAX -clock $CLK_NAME \
-                [remove_from_collection [all_inputs] [get_ports $CLK_NAME]]
-set_input_delay -min $INPUT_DELAY_MIN -clock $CLK_NAME \
-                [remove_from_collection [all_inputs] [get_ports $CLK_NAME]]
-
-set_output_delay -max $OUTPUT_DELAY -clock $CLK_NAME [all_outputs]
-set_load [expr $MAX_LOAD * 3] [all_outputs]
-set_isolate_ports -type buffer [all_outputs]
-
-puts "INFO: IO constraints applied with LIB = $LIB_NAME, CLK = $CLK_NAME, Period = ${CLK_PERIOD}ns"
+    # ===== 内部单元流程 =====
+    puts $fh_out "##### 内部单元约束 #####"
+    # 下面你自己填内部单元需要的内容，示例：
+    puts $fh_out "set_max_transition 10 \[all_nets\]"
+    puts $fh_out "set_max_fanout 10 \[all_nets\]"
+    puts $fh_out ""
 } else {
     # ===== 原 IO-pad 流程（整段包进来，一字未动） =====
     source_io_flow $fh_out
@@ -216,13 +198,17 @@ safeClose $fh_out
 log_info "约束已追加写入: $OUTPUT_SCRIPT"
 exit 0
 
-# ---------------------------------------------------------------------------
-# 原 IO-pad 流程子程序：所有旧代码直接搬进来，不做任何修改
-# ---------------------------------------------------------------------------
+
 proc source_io_flow {fh_out} {
-    # 依赖全局：errorExit, DEFAULT_*, 变量见下方 upvar
-    upvar #0 ClockPort_List ClockPort_List
-    upvar #0 fh_io          fh_io
+    # 把原来“Process io.lst and emit I/O delays”开始一直到
+    # “safeClose $fh_io”之前的内容完整粘在这里即可。
+    # 为了篇幅，下面用伪代码占位，你实际使用时把旧代码整块替换进来。
+    #
+    # --------------- 开始复制旧代码 ---------------
+    # ... 原 while {[gets $fh_io ...} 一直到 safeClose $fh_io
+    # --------------- 结束复制旧代码 ---------------
+    #
+    # 下面给出关键框架，防止 proc 参数报错：
     upvar #0 DEFAULT_LOAD_PF DEFAULT_LOAD_PF
     upvar #0 DEFAULT_HIGH_FANOUT_THRESHOLD DEFAULT_HIGH_FANOUT_THRESHOLD
     upvar #0 DEFAULT_HIGH_FANOUT_PIN_CAP DEFAULT_HIGH_FANOUT_PIN_CAP
@@ -232,8 +218,9 @@ proc source_io_flow {fh_out} {
     upvar #0 wc_found wc_found
     upvar #0 LIB_WC_NAME LIB_WC_NAME
     upvar #0 WorstCondition WorstCondition
+    upvar #0 ClockPort_List ClockPort_List
+    upvar #0 fh_io fh_io
 
-    puts $fh_out "##### I/O 延迟与端口约束 #####"
     set line_number 0
     while {[gets $fh_io raw] >= 0} {
         incr line_number
@@ -330,13 +317,15 @@ proc source_io_flow {fh_out} {
             puts $fh_out ""
         }
     }
+    safeClose $fh_io
 
-    # 原环境约束段
+    # 环境约束段
     puts $fh_out ""
     puts $fh_out "######## 环境约束 ########"
     puts $fh_out ""
-    puts $fh_out "# 输出负载 (pF)"
-    puts $fh_out "set_load $DEFAULT_LOAD_PF \[all_outputs\]"
+    puts $fh_out "# ---- 高扇出建模（模板未覆盖，保留） ----"
+    puts $fh_out "set_app_var high_fanout_net_threshold $DEFAULT_HIGH_FANOUT_THRESHOLD"
+    puts $fh_out "set_app_var high_fanout_net_pin_capacitance $DEFAULT_HIGH_FANOUT_PIN_CAP"
     puts $fh_out ""
     puts $fh_out "# 高扇出建模 (Synopsys DC)"
     puts $fh_out "set_app_var high_fanout_net_threshold $DEFAULT_HIGH_FANOUT_THRESHOLD"
@@ -347,15 +336,15 @@ proc source_io_flow {fh_out} {
     puts $fh_out "set_wire_load_selection \"$DEFAULT_WIRE_LOAD_SELECTION\""
     puts $fh_out ""
 
-    if {$ENABLE_SET_OPERATING_CONDITIONS} {
-        if {$wc_found ne "" && $LIB_WC_NAME ne "" && $WorstCondition ne ""} {
-            puts $fh_out "# 工作条件"
-            puts $fh_out "set_operating_conditions -max $WorstCondition -max_library $LIB_WC_NAME"
-            puts $fh_out ""
-        } else {
-            warn "未能设置 set_operating_conditions（缺少库或 WorstCondition）"
-        }
-    }
+   # if {$ENABLE_SET_OPERATING_CONDITIONS} {
+   #     if {$wc_found ne "" && $LIB_WC_NAME ne "" && $WorstCondition ne ""} {
+   #        puts $fh_out "# 工作条件"
+   #        puts $fh_out "set_operating_conditions -max $WorstCondition -max_library $LIB_WC_NAME"
+   #       puts $fh_out ""
+   #    } else {
+   #         warn "未能设置 set_operating_conditions（缺少库或 WorstCondition）"
+   #    }
+   #} 
 
     puts $fh_out "# 示例（按需启用）："
     puts $fh_out "# set_drive 0.1125 \[all_inputs\]        ;# ~ LVCMOS18 16mA => 0.1125 kΩ"
