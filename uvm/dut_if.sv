@@ -1,29 +1,31 @@
-//------------------------------------------
-// 仅声明信号 + 时钟块，不含任何断言
-//------------------------------------------
 interface dut_if #(
   parameter int DATA_WIDTH   = 8,
-  parameter int RESULT_WIDTH = 16
+  parameter int RESULT_WIDTH = 16,
+  parameter bit HAS_HANDSHAKE = 0  // Parameter to enable/disable
 )(
   input logic clk,
   input logic rst_n
 );
 
-  // 核心数据
+  // Core signals
   logic [DATA_WIDTH-1:0]   a, b;
   logic [RESULT_WIDTH-1:0] out;
 
-  // 可选握手
+  // Optional handshake signals
   logic valid, ready, done;
 
-  // 驱动 / 采样时钟块
+  // Driver clocking block
   clocking cb_driver @(posedge clk);
-    output a, b, valid;
-    input  ready, done, out;
+    output a, b;
+    if (HAS_HANDSHAKE) output valid;
+    if (HAS_HANDSHAKE) input ready, done;
+    input out;
   endclocking
 
+  // Monitor clocking block  
   clocking cb_monitor @(posedge clk);
-    input a, b, out, valid, ready, done;
+    input a, b, out;
+    if (HAS_HANDSHAKE) input valid, ready, done;
   endclocking
 
   // 各种 modport
@@ -34,3 +36,6 @@ interface dut_if #(
                       output out, ready, done);
 
 endinterface
+
+/* dut_if #(.DATA_WIDTH(8), .RESULT_WIDTH(16), .HAS_HANDSHAKE(0)) 
+       dut_if_inst(.clk(clk), .rst_n(rst_n));  */
