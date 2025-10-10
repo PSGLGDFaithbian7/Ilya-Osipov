@@ -103,29 +103,57 @@ validate_env:
 	@echo "Validation passed ✓"
 
 ##############################################################################
-# Setup - File List Generation ONLY
+# Enhanced Setup - File List Generation with Error Handling
 ##############################################################################
 
 setup: $(DIRS) $(RTL_FILELIST) $(INCLUDE_FILELIST)
 	@echo "Setup completed ✓"
 
-# Generate RTL file list (simple, no heredoc issues)
+# Generate RTL file list (robust version)
 $(RTL_FILELIST): | $(CONFIG_DIR)
 	@echo "Generating RTL file list..."
 	@echo "# RTL Files - Generated $(shell date)" > $@
 	@echo "# Project: $(PROJECT_NAME)" >> $@
-	@find $(RTL_ROOT) -name "*.sv" -o -name "*.v" 2>/dev/null >> $@ || \
-		(echo "ERROR: No RTL files found in $(RTL_ROOT)"; exit 1)
-	@echo "Generated with $$(wc -l < $@) files ✓"
+	@if [ -d "$(RTL_ROOT)" ]; then \
+		find $(RTL_ROOT) -name "*.sv" -o -name "*.v" 2>/dev/null >> $@ || true; \
+		file_count=$$(wc -l < $@ | tail -2 | head -1); \
+		if [ "$$file_count" -eq 2 ]; then \
+			echo "WARNING: No RTL files found in $(RTL_ROOT)"; \
+			echo "# WARNING: No RTL files found" >> $@; \
+		else \
+			echo "  Found $$(($$file_count - 2)) RTL files"; \
+		fi; \
+	else \
+		echo "ERROR: RTL_ROOT directory does not exist: $(RTL_ROOT)"; \
+		echo "# ERROR: RTL_ROOT not found: $(RTL_ROOT)" >> $@; \
+		exit 1; \
+	fi
+	@echo "Generated RTL filelist ✓"
 
-# Generate include configuration (simple shell commands)
+# Generate include configuration (robust version)
 $(INCLUDE_FILELIST): | $(CONFIG_DIR)
 	@echo "Generating include configuration..."
-	@echo "# Include Dirs - Generated $(shell date)" > $@
-	@for dir in $(INCLUDE_DIRS); do \
-		[ -d "$$dir" ] && echo "+incdir+$$dir" >> $@; \
-	done
-	@echo "Generated ✓"
+	@echo "# Include Configuration - Generated $(shell date)" > $@
+	@echo "# Project: $(PROJECT_NAME)" >> $@
+	@echo "" >> $@
+	@dir_count=0; \
+	for dir in $(INCLUDE_DIRS); do \
+		if [ -d "$$dir" ]; then \
+			echo "+incdir+$$dir" >> $@; \
+			echo "  ✓ Added include directory: $$dir"; \
+			dir_count=$$((dir_count + 1)); \
+		else \
+			echo "  ⚠ Include directory not found (skipped): $$dir"; \
+		fi; \
+	done; \
+	if [ $$dir_count -eq 0 ]; then \
+		echo "  ⚠ WARNING: No include directories found"; \
+		echo "# WARNING: No valid include directories" >> $@; \
+	else \
+		echo "  Added $$dir_count include directories"; \
+	fi
+	@echo "Generated include configuration ✓"
+
 
 ##############################################################################
 # Analysis Targets
