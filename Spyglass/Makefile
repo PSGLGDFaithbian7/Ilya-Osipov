@@ -213,10 +213,10 @@ $(SCRIPT_DIR)/setup_project.tcl: $(DIRS)
 	# Project configuration from environment
 	proc get_env_var {var default} {
 	    global env
-	    if {[info exists env(\$$var)]} {
-	        return \$$env(\$$var)
+	    if {[info exists env($$var)]} {
+	        return $$env($$var)
 	    } else {
-	        return \$$default
+	        return $$default
 	    }
 	}
 
@@ -230,49 +230,49 @@ $(SCRIPT_DIR)/setup_project.tcl: $(DIRS)
 	set BUILD_TAG        [get_env_var "BUILD_TAG" "$(BUILD_TAG)"]
 
 	proc setup_spyglass_project {} {
-	    global PROJECT_NAME TOP_MODULES RTL_FILELIST INCLUDE_FILELIST 
+	    global PROJECT_NAME TOP_MODULES RTL_FILELIST INCLUDE_FILELIST
 	    global SG_WAIVER_FILE REUSE_MODE DEBUG_MODE BUILD_TAG
 	    
-	    log_msg "INFO" "Setting up Spyglass project: \$$PROJECT_NAME"
-	    log_msg "INFO" "Build Tag: \$$BUILD_TAG"
-	    log_msg "INFO" "Top Modules: \$$TOP_MODULES"
-	    log_msg "INFO" "Reuse Mode: \$$REUSE_MODE"
+	    log_msg "INFO" "Setting up Spyglass project: $$PROJECT_NAME"
+	    log_msg "INFO" "Build Tag: $$BUILD_TAG"
+	    log_msg "INFO" "Top Modules: $$TOP_MODULES"
+	    log_msg "INFO" "Reuse Mode: $$REUSE_MODE"
 	    
 	    # Handle project creation/reuse
-	    if {\$$REUSE_MODE && [file exists "\${PROJECT_NAME}.prj"]} {
+	    if {$$REUSE_MODE && [file exists "$${PROJECT_NAME}.prj"]} {
 	        log_msg "INFO" "Reusing existing project"
-	        open_project \${PROJECT_NAME}.prj
+	        open_project $${PROJECT_NAME}.prj
 	    } else {
 	        log_msg "INFO" "Creating new project"
-	        new_project \$$PROJECT_NAME -force
+	        new_project $$PROJECT_NAME -force
 	    }
 	    
 	    # Read design files with validation
-	    if {[file exists \$$RTL_FILELIST]} {
-	        log_msg "INFO" "Reading RTL files from: \$$RTL_FILELIST"
-	        if {[catch {read_file -type sourcelist \$$RTL_FILELIST} err]} {
-	            log_msg "ERROR" "Failed to read RTL filelist: \$$err"
+	    if {[file exists $$RTL_FILELIST]} {
+	        log_msg "INFO" "Reading RTL files from: $$RTL_FILELIST"
+	        if {[catch {read_file -type sourcelist $$RTL_FILELIST} err]} {
+	            log_msg "ERROR" "Failed to read RTL filelist: $$err"
 	            return -1
 	        }
 	    } else {
-	        log_msg "ERROR" "RTL filelist not found: \$$RTL_FILELIST"
+	        log_msg "ERROR" "RTL filelist not found: $$RTL_FILELIST"
 	        return -1
 	    }
 	    
 	    # Read include configuration
-	    if {[file exists \$$INCLUDE_FILELIST]} {
-	        log_msg "INFO" "Reading include configuration from: \$$INCLUDE_FILELIST"
-	        apply_include_config \$$INCLUDE_FILELIST
+	    if {[file exists $$INCLUDE_FILELIST]} {
+	        log_msg "INFO" "Reading include configuration from: $$INCLUDE_FILELIST"
+	        apply_include_config $$INCLUDE_FILELIST
 	    }
 	    
 	    # Apply waivers if available
-	    apply_waivers \$$SG_WAIVER_FILE
+	    apply_waivers $$SG_WAIVER_FILE
 	    
 	    # Configure for each top module
-	    foreach top \$$TOP_MODULES {
-	        log_msg "INFO" "Configuring for top module: \$$top"
-	        set_option top \$$top
-	        configure_analysis_options \$$top
+	    foreach top $$TOP_MODULES {
+	        log_msg "INFO" "Configuring for top module: $$top"
+	        set_option top $$top
+	        configure_analysis_options $$top
 	    }
 	    
 	    log_msg "INFO" "Project setup completed successfully"
@@ -280,30 +280,30 @@ $(SCRIPT_DIR)/setup_project.tcl: $(DIRS)
 	}
 
 	proc apply_include_config {config_file} {
-	    set fp [open \$$config_file r]
-	    while {[gets \$$fp line] >= 0} {
-	        set line [string trim \$$line]
-	        if {[string match "+incdir+*" \$$line]} {
-	            set incdir [string range \$$line 8 end]
-	            if {[file isdirectory \$$incdir]} {
-	                set_option incdir \$$incdir
-	                log_msg "INFO" "Added include directory: \$$incdir"
+	    set fp [open $$config_file r]
+	    while {[gets $$fp line] >= 0} {
+	        set line [string trim $$line]
+	        if {[string match "+incdir+*" $$line]} {
+	            set incdir [string range $$line 8 end]
+	            if {[file isdirectory $$incdir]} {
+	                set_option incdir $$incdir
+	                log_msg "INFO" "Added include directory: $$incdir"
 	            }
-	        } elseif {[string match "+include+*" \$$line]} {
-	            set incfile [string range \$$line 9 end]
-	            if {[file exists \$$incfile]} {
-	                read_file -type verilog \$$incfile
-	                log_msg "INFO" "Included file: \$$incfile"
+	        } elseif {[string match "+include+*" $$line]} {
+	            set incfile [string range $$line 9 end]
+	            if {[file exists $$incfile]} {
+	                read_file -type verilog $$incfile
+	                log_msg "INFO" "Included file: $$incfile"
 	            }
 	        }
 	    }
-	    close \$$fp
+	    close $$fp
 	}
 
 	proc configure_analysis_options {top_module} {
 	    global DEBUG_MODE
 	    
-	    log_msg "INFO" "Configuring analysis options for: \$$top_module"
+	    log_msg "INFO" "Configuring analysis options for: $$top_module"
 	    
 	    # Basic configuration
 	    set_option enableSV yes
@@ -316,7 +316,7 @@ $(SCRIPT_DIR)/setup_project.tcl: $(DIRS)
 	    set_option enable_clock_domain_analysis yes
 	    
 	    # Debug options
-	    if {\$$DEBUG_MODE} {
+	    if {$$DEBUG_MODE} {
 	        set_option verbose_level 2
 	        set_option enable_debug_db yes
 	        log_msg "DEBUG" "Debug mode enabled"
@@ -328,11 +328,11 @@ $(SCRIPT_DIR)/setup_project.tcl: $(DIRS)
 	    set_option check_FSM yes
 	    set_option check_case_constructs yes
 	    
-	    log_msg "INFO" "Analysis options configured for \$$top_module"
+	    log_msg "INFO" "Analysis options configured for $$top_module"
 	}
 
 	# Execute setup if run directly
-	if {[info script] eq \$$argv0} {
+	if {[info script] eq $$argv0} {
 	    if {[setup_spyglass_project] == 0} {
 	        save_project
 	        log_msg "INFO" "Project saved successfully"
@@ -363,54 +363,54 @@ $(SCRIPT_DIR)/run_goals.tcl: $(DIRS)
 	    global RESULTS_DIR TIMESTAMP TOP_MODULES REPORT_ONLY BUILD_TAG
 	    
 	    log_msg "INFO" "Starting lint analysis..."
-	    log_msg "INFO" "Build Tag: \$$BUILD_TAG"
+	    log_msg "INFO" "Build Tag: $$BUILD_TAG"
 	    
-	    set report_dir [ensure_dir [file join \$$RESULTS_DIR "lint" "lint_\$$TIMESTAMP"]]
+	    set report_dir [ensure_dir [file join $$RESULTS_DIR "lint" "lint_$$TIMESTAMP"]]
 	    
-	    if {!\$$REPORT_ONLY} {
+	    if {!$$REPORT_ONLY} {
 	        # Set current goal to lint
 	        if {[catch {current_goal lint/lint_rtl} err]} {
-	            log_msg "ERROR" "Failed to set lint goal: \$$err"
+	            log_msg "ERROR" "Failed to set lint goal: $$err"
 	            return -1
 	        }
 	        
 	        # Process each top module
 	        set total_violations 0
-	        foreach top \$$TOP_MODULES {
-	            log_msg "INFO" "Processing top module: \$$top"
+	        foreach top $$TOP_MODULES {
+	            log_msg "INFO" "Processing top module: $$top"
 	            
 	            # Compile design
 	            if {[catch {
-	                set_option top \$$top
+	                set_option top $$top
 	                compile_design -goal lint/lint_rtl
 	            } err]} {
-	                log_msg "ERROR" "Compilation failed for \$$top: \$$err"
+	                log_msg "ERROR" "Compilation failed for $$top: $$err"
 	                return -1
 	            }
 	            
 	            # Run lint analysis
 	            if {[catch {run_goal} err]} {
-	                log_msg "ERROR" "Lint analysis failed for \$$top: \$$err"
+	                log_msg "ERROR" "Lint analysis failed for $$top: $$err"
 	                return -1
 	            }
 	            
 	            # Generate reports for this top
-	            set top_report_dir [ensure_dir [file join \$$report_dir \$$top]]
-	            set violations [generate_lint_reports \$$top_report_dir \$$top]
-	            set total_violations [expr \$$total_violations + \$$violations]
+	            set top_report_dir [ensure_dir [file join $$report_dir $$top]]
+	            set violations [generate_lint_reports $$top_report_dir $$top]
+	            set total_violations [expr $$total_violations + $$violations]
 	        }
 	        
-	        log_msg "INFO" "Lint analysis completed with \$$total_violations total violations"
+	        log_msg "INFO" "Lint analysis completed with $$total_violations total violations"
 	    } else {
 	        log_msg "INFO" "Report-only mode: regenerating reports"
-	        foreach top \$$TOP_MODULES {
-	            set top_report_dir [ensure_dir [file join \$$report_dir \$$top]]
-	            generate_lint_reports \$$top_report_dir \$$top
+	        foreach top $$TOP_MODULES {
+	            set top_report_dir [ensure_dir [file join $$report_dir $$top]]
+	            generate_lint_reports $$top_report_dir $$top
 	        }
 	    }
 	    
 	    # Generate summary report
-	    generate_summary_report \$$report_dir "Lint Analysis" \$$BUILD_TAG
+	    generate_summary_report $$report_dir "Lint Analysis" $$BUILD_TAG
 	    
 	    return 0
 	}
@@ -420,30 +420,30 @@ $(SCRIPT_DIR)/run_goals.tcl: $(DIRS)
 	    
 	    log_msg "INFO" "Starting CDC analysis..."
 	    
-	    set report_dir [ensure_dir [file join \$$RESULTS_DIR "cdc" "cdc_\$$TIMESTAMP"]]
+	    set report_dir [ensure_dir [file join $$RESULTS_DIR "cdc" "cdc_$$TIMESTAMP"]]
 	    
 	    if {[catch {current_goal cdc/cdc_setup_check} err]} {
-	        log_msg "ERROR" "Failed to set CDC goal: \$$err"
+	        log_msg "ERROR" "Failed to set CDC goal: $$err"
 	        return -1
 	    }
 	    
-	    foreach top \$$TOP_MODULES {
-	        log_msg "INFO" "CDC analysis for top module: \$$top"
+	    foreach top $$TOP_MODULES {
+	        log_msg "INFO" "CDC analysis for top module: $$top"
 	        
 	        if {[catch {
-	            set_option top \$$top
+	            set_option top $$top
 	            compile_design -goal cdc/cdc_setup_check
 	            run_goal
 	        } err]} {
-	            log_msg "ERROR" "CDC analysis failed for \$$top: \$$err"
+	            log_msg "ERROR" "CDC analysis failed for $$top: $$err"
 	            return -1
 	        }
 	        
-	        set top_report_dir [ensure_dir [file join \$$report_dir \$$top]]
-	        generate_cdc_reports \$$top_report_dir \$$top
+	        set top_report_dir [ensure_dir [file join $$report_dir $$top]]
+	        generate_cdc_reports $$top_report_dir $$top
 	    }
 	    
-	    generate_summary_report \$$report_dir "CDC Analysis" \$$BUILD_TAG
+	    generate_summary_report $$report_dir "CDC Analysis" $$BUILD_TAG
 	    return 0
 	}
 
@@ -452,77 +452,77 @@ $(SCRIPT_DIR)/run_goals.tcl: $(DIRS)
 	    
 	    log_msg "INFO" "Starting RDC analysis..."
 	    
-	    set report_dir [ensure_dir [file join \$$RESULTS_DIR "rdc" "rdc_\$$TIMESTAMP"]]
+	    set report_dir [ensure_dir [file join $$RESULTS_DIR "rdc" "rdc_$$TIMESTAMP"]]
 	    
 	    if {[catch {current_goal rdc/rdc_setup_check} err]} {
-	        log_msg "ERROR" "Failed to set RDC goal: \$$err"
+	        log_msg "ERROR" "Failed to set RDC goal: $$err"
 	        return -1
 	    }
 	    
-	    foreach top \$$TOP_MODULES {
-	        log_msg "INFO" "RDC analysis for top module: \$$top"
+	    foreach top $$TOP_MODULES {
+	        log_msg "INFO" "RDC analysis for top module: $$top"
 	        
 	        if {[catch {
-	            set_option top \$$top
+	            set_option top $$top
 	            compile_design -goal rdc/rdc_setup_check
 	            run_goal
 	        } err]} {
-	            log_msg "ERROR" "RDC analysis failed for \$$top: \$$err"
+	            log_msg "ERROR" "RDC analysis failed for $$top: $$err"
 	            return -1
 	        }
 	        
-	        set top_report_dir [ensure_dir [file join \$$report_dir \$$top]]
-	        generate_rdc_reports \$$top_report_dir \$$top
+	        set top_report_dir [ensure_dir [file join $$report_dir $$top]]
+	        generate_rdc_reports $$top_report_dir $$top
 	    }
 	    
-	    generate_summary_report \$$report_dir "RDC Analysis" \$$BUILD_TAG
+	    generate_summary_report $$report_dir "RDC Analysis" $$BUILD_TAG
 	    return 0
 	}
 
 	proc generate_lint_reports {report_dir top_module} {
-	    log_msg "INFO" "Generating lint reports for \$$top_module in: \$$report_dir"
+	    log_msg "INFO" "Generating lint reports for $$top_module in: $$report_dir"
 	    
 	    set violation_count 0
 	    
 	    # Summary report with error handling
 	    if {[catch {
-	        report_policy_summary > [file join \$$report_dir "lint_summary.rpt"]
+	        report_policy_summary > [file join $$report_dir "lint_summary.rpt"]
 	        set violation_count [get_violation_count]
 	    } err]} {
-	        log_msg "WARNING" "Failed to generate summary report: \$$err"
+	        log_msg "WARNING" "Failed to generate summary report: $$err"
 	    }
 	    
 	    # Detailed reports
-	    catch {report_policy -skip_empty_summary_status -verbose > [file join \$$report_dir "lint_violations.rpt"]}
-	    catch {report_policy -rules > [file join \$$report_dir "lint_rules.rpt"]}
-	    catch {report_policy -statistics > [file join \$$report_dir "lint_statistics.rpt"]}
-	    catch {report_policy -waived > [file join \$$report_dir "lint_waived.rpt"]}
+	    catch {report_policy -skip_empty_summary_status -verbose > [file join $$report_dir "lint_violations.rpt"]}
+	    catch {report_policy -rules > [file join $$report_dir "lint_rules.rpt"]}
+	    catch {report_policy -statistics > [file join $$report_dir "lint_statistics.rpt"]}
+	    catch {report_policy -waived > [file join $$report_dir "lint_waived.rpt"]}
 	    
 	    # Custom violation analysis
-	    generate_violation_analysis \$$report_dir \$$top_module
+	    generate_violation_analysis $$report_dir $$top_module
 	    
-	    log_msg "INFO" "Lint reports generated for \$$top_module (\$$violation_count violations)"
-	    return \$$violation_count
+	    log_msg "INFO" "Lint reports generated for $$top_module ($$violation_count violations)"
+	    return $$violation_count
 	}
 
 	proc generate_cdc_reports {report_dir top_module} {
-	    log_msg "INFO" "Generating CDC reports for \$$top_module"
+	    log_msg "INFO" "Generating CDC reports for $$top_module"
 	    
-	    catch {report_policy_summary > [file join \$$report_dir "cdc_summary.rpt"]}
-	    catch {report_policy -verbose > [file join \$$report_dir "cdc_violations.rpt"]}
-	    catch {report_clock_domain > [file join \$$report_dir "clock_domains.rpt"]}
-	    catch {report_clock_interaction > [file join \$$report_dir "clock_interactions.rpt"]}
+	    catch {report_policy_summary > [file join $$report_dir "cdc_summary.rpt"]}
+	    catch {report_policy -verbose > [file join $$report_dir "cdc_violations.rpt"]}
+	    catch {report_clock_domain > [file join $$report_dir "clock_domains.rpt"]}
+	    catch {report_clock_interaction > [file join $$report_dir "clock_interactions.rpt"]}
 	    
-	    generate_cdc_analysis \$$report_dir \$$top_module
+	    generate_cdc_analysis $$report_dir $$top_module
 	}
 
 	proc generate_rdc_reports {report_dir top_module} {
-	    log_msg "INFO" "Generating RDC reports for \$$top_module"
+	    log_msg "INFO" "Generating RDC reports for $$top_module"
 	    
-	    catch {report_policy_summary > [file join \$$report_dir "rdc_summary.rpt"]}
-	    catch {report_policy -verbose > [file join \$$report_dir "rdc_violations.rpt"]}
-	    catch {report_reset_domain > [file join \$$report_dir "reset_domains.rpt"]}
-	    catch {report_reset_interaction > [file join \$$report_dir "reset_interactions.rpt"]}
+	    catch {report_policy_summary > [file join $$report_dir "rdc_summary.rpt"]}
+	    catch {report_policy -verbose > [file join $$report_dir "rdc_violations.rpt"]}
+	    catch {report_reset_domain > [file join $$report_dir "reset_domains.rpt"]}
+	    catch {report_reset_interaction > [file join $$report_dir "reset_interactions.rpt"]}
 	}
 
 	proc get_violation_count {} {
@@ -530,8 +530,8 @@ $(SCRIPT_DIR)/run_goals.tcl: $(DIRS)
 	    if {[catch {
 	        set result [report_policy -return_string -summary]
 	        # Parse result to extract violation count
-	        if {[regexp {(\d+)\s+violations} \$$result match count]} {
-	            return \$$count
+	        if {[regexp {(\d+)\s+violations} $$result match count]} {
+	            return $$count
 	        }
 	    }]} {
 	        return 0
@@ -541,56 +541,56 @@ $(SCRIPT_DIR)/run_goals.tcl: $(DIRS)
 
 	proc generate_violation_analysis {report_dir top_module} {
 	    # Generate custom violation analysis
-	    set analysis_file [file join \$$report_dir "violation_analysis.txt"]
-	    set fp [open \$$analysis_file w]
-	    puts \$$fp "Violation Analysis for \$$top_module"
-	    puts \$$fp "Generated: [clock format [clock seconds]]"
-	    puts \$$fp "======================================"
-	    puts \$$fp ""
+	    set analysis_file [file join $$report_dir "violation_analysis.txt"]
+	    set fp [open $$analysis_file w]
+	    puts $$fp "Violation Analysis for $$top_module"
+	    puts $$fp "Generated: [clock format [clock seconds]]"
+	    puts $$fp "======================================"
+	    puts $$fp ""
 	    
 	    # Add custom analysis logic here
-	    puts \$$fp "Top 10 Most Common Violations:"
-	    puts \$$fp "Top 10 Most Violated Rules:"
-	    puts \$$fp "Severity Distribution:"
+	    puts $$fp "Top 10 Most Common Violations:"
+	    puts $$fp "Top 10 Most Violated Rules:"
+	    puts $$fp "Severity Distribution:"
 	    
-	    close \$$fp
+	    close $$fp
 	}
 
 	proc generate_cdc_analysis {report_dir top_module} {
 	    # Generate CDC-specific analysis
-	    set analysis_file [file join \$$report_dir "cdc_analysis.txt"]
-	    set fp [open \$$analysis_file w]
-	    puts \$$fp "CDC Analysis Summary for \$$top_module"
-	    puts \$$fp "Generated: [clock format [clock seconds]]"
-	    puts \$$fp "======================================="
-	    close \$$fp
+	    set analysis_file [file join $$report_dir "cdc_analysis.txt"]
+	    set fp [open $$analysis_file w]
+	    puts $$fp "CDC Analysis Summary for $$top_module"
+	    puts $$fp "Generated: [clock format [clock seconds]]"
+	    puts $$fp "======================================="
+	    close $$fp
 	}
 
 	proc generate_summary_report {report_dir analysis_type build_tag} {
-	    set summary_file [file join \$$report_dir "00_SUMMARY.txt"]
-	    set fp [open \$$summary_file w]
+	    set summary_file [file join $$report_dir "00_SUMMARY.txt"]
+	    set fp [open $$summary_file w]
 	    
-	    puts \$$fp "\$$analysis_type Summary Report"
-	    puts \$$fp "=============================="
-	    puts \$$fp "Generated: [clock format [clock seconds]]"
-	    puts \$$fp "Build Tag: \$$build_tag"
-	    puts \$$fp "Analysis: \$$analysis_type"
-	    puts \$$fp ""
+	    puts $$fp "$$analysis_type Summary Report"
+	    puts $$fp "=============================="
+	    puts $$fp "Generated: [clock format [clock seconds]]"
+	    puts $$fp "Build Tag: $$build_tag"
+	    puts $$fp "Analysis: $$analysis_type"
+	    puts $$fp ""
 	    
 	    # List all generated reports
-	    set report_files [glob -nocomplain [file join \$$report_dir "*" "*.rpt"]]
-	    if {[llength \$$report_files] > 0} {
-	        puts \$$fp "Generated Reports:"
-	        foreach rpt [lsort \$$report_files] {
-	            set rel_path [file join [file tail [file dirname \$$rpt]] [file tail \$$rpt]]
-	            puts \$$fp "  \$$rel_path"
+	    set report_files [glob -nocomplain [file join $$report_dir "*" "*.rpt"]]
+	    if {[llength $$report_files] > 0} {
+	        puts $$fp "Generated Reports:"
+	        foreach rpt [lsort $$report_files] {
+	            set rel_path [file join [file tail [file dirname $$rpt]] [file tail $$rpt]]
+	            puts $$fp "  $$rel_path"
 	        }
 	    }
 	    
-	    close \$$fp
+	    close $$fp
 	    
 	    # Generate HTML index
-	    generate_html_report \$$report_dir \$$analysis_type
+	    generate_html_report $$report_dir $$analysis_type
 	}
 	EOL
 
@@ -601,33 +601,33 @@ $(SCRIPT_DIR)/common_procs.tcl: $(DIRS)
 	# Common Procedures for Spyglass Scripts
 
 	proc log_msg {level msg} {
-	    puts "[\$$level] \$$msg"
+	    puts "[$$level] $$msg"
 	}
 
 	proc get_env_var {var default} {
 	    global env
-	    if {[info exists env(\$$var)]} {
-	        return \$$env(\$$var)
+	    if {[info exists env($$var)]} {
+	        return $$env($$var)
 	    } else {
-	        return \$$default
+	        return $$default
 	    }
 	}
 
 	proc ensure_dir {dir} {
-	    if {![file exists \$$dir]} {
-	        if {[catch {file mkdir \$$dir} err]} {
-	            log_msg "ERROR" "Failed to create directory \$$dir: \$$err"
+	    if {![file exists $$dir]} {
+	        if {[catch {file mkdir $$dir} err]} {
+	            log_msg "ERROR" "Failed to create directory $$dir: $$err"
 	            return ""
 	        }
 	    }
-	    return \$$dir
+	    return $$dir
 	}
 
 	proc apply_waivers {waiver_file} {
-	    if {[file exists \$$waiver_file]} {
-	        log_msg "INFO" "Applying waivers from: \$$waiver_file"
-	        if {[catch {read_waiver \$$waiver_file} err]} {
-	            log_msg "WARNING" "Failed to apply waivers: \$$err"
+	    if {[file exists $$waiver_file]} {
+	        log_msg "INFO" "Applying waivers from: $$waiver_file"
+	        if {[catch {read_waiver $$waiver_file} err]} {
+	            log_msg "WARNING" "Failed to apply waivers: $$err"
 	        }
 	    } else {
 	        log_msg "INFO" "No waiver file found, skipping waivers"
@@ -636,14 +636,14 @@ $(SCRIPT_DIR)/common_procs.tcl: $(DIRS)
 
 	proc generate_html_report {report_dir analysis_type} {
 	    # Placeholder for HTML report generation - implement as needed (e.g., using Spyglass APIs or external tools)
-	    log_msg "INFO" "HTML report generation stub for \$$analysis_type in \$$report_dir"
-	    set html_file [file join \$$report_dir "index.html"]
-	    set fp [open \$$html_file w]
-	    puts \$$fp "<html><head><title>\$$analysis_type Report</title></head><body>"
-	    puts \$$fp "<h1>\$$analysis_type Summary</h1>"
-	    puts \$$fp "<p>Generated: [clock format [clock seconds]]</p>"
-	    puts \$$fp "</body></html>"
-	    close \$$fp
+	    log_msg "INFO" "HTML report generation stub for $$analysis_type in $$report_dir"
+	    set html_file [file join $$report_dir "index.html"]
+	    set fp [open $$html_file w]
+	    puts $$fp "<html><head><title>$$analysis_type Report</title></head><body>"
+	    puts $$fp "<h1>$$analysis_type Summary</h1>"
+	    puts $$fp "<p>Generated: [clock format [clock seconds]]</p>"
+	    puts $$fp "</body></html>"
+	    close $$fp
 	}
 	EOL
 
@@ -659,13 +659,13 @@ $(SCRIPT_DIR)/run_spyglass.tcl: $(DIRS)
 	source [file join [file dirname [info script]] "run_goals.tcl"]
 
 	# Main execution
-	if {[info script] eq \$$argv0} {
-	    if {[llength \$$argv] < 1} {
+	if {[info script] eq $$argv0} {
+	    if {[llength $$argv] < 1} {
 	        log_msg "ERROR" "Usage: sg_shell -f [info script] <lint|cdc|rdc> [options]"
 	        exit 1
 	    }
 
-	    set goal [lindex \$$argv 0]
+	    set goal [lindex $$argv 0]
 
 	    # Setup the project
 	    if {[setup_spyglass_project] != 0} {
@@ -675,7 +675,7 @@ $(SCRIPT_DIR)/run_spyglass.tcl: $(DIRS)
 
 	    # Run the specified goal
 	    set result -1
-	    switch \$$goal {
+	    switch $$goal {
 	        "lint" {
 	            set result [run_lint_goal]
 	        }
@@ -686,19 +686,19 @@ $(SCRIPT_DIR)/run_spyglass.tcl: $(DIRS)
 	            set result [run_rdc_goal]
 	        }
 	        default {
-	            log_msg "ERROR" "Unknown goal: \$$goal"
+	            log_msg "ERROR" "Unknown goal: $$goal"
 	            exit 1
 	        }
 	    }
 
-	    if {\$$result == 0} {
-	        log_msg "INFO" "Goal \$$goal completed successfully"
+	    if {$$result == 0} {
+	        log_msg "INFO" "Goal $$goal completed successfully"
 	        save_project
 	    } else {
-	        log_msg "ERROR" "Goal \$$goal failed"
+	        log_msg "ERROR" "Goal $$goal failed"
 	    }
 
-	    exit \$$result
+	    exit $$result
 	}
 	EOL
 
@@ -774,7 +774,7 @@ FROM ubuntu:20.04; \
 RUN apt-get update && apt-get install -y tcsh; \
 COPY tools/spyglass /tools/spyglass; \
 ENV SPYGLASS_HOME=/tools/spyglass; \
-ENV PATH=\$$PATH:/tools/spyglass/bin; \
+ENV PATH=$$PATH:/tools/spyglass/bin; \
 WORKDIR /workspace; \
 		DOCKEREOF \
 	fi
