@@ -206,6 +206,39 @@ run_rdc: validate_env setup
 		echo "ERROR: RDC analysis failed"; exit 1; \
 	fi
 ##############################################################################
+# View Reports
+##############################################################################
+
+.PHONY: view_lint view_cdc view_rdc
+
+view_lint:
+	@latest=$$(ls -td $(RESULTS_DIR)/lint/run_* 2>/dev/null | head -1); \
+	if [ -n "$$latest" ]; then \
+		html="$$latest/index.html"; \
+		if [ -f "$$html" ]; then \
+			echo "Opening lint report: $$html"; \
+			firefox "$$html" & \
+		else \
+			echo "HTML report not found"; \
+		fi; \
+	else \
+		echo "No lint results found"; \
+	fi
+
+view_cdc:
+	@latest=$$(ls -td $(RESULTS_DIR)/cdc/run_* 2>/dev/null | head -1); \
+	if [ -n "$$latest" ]; then \
+		firefox "$$latest/index.html" & \
+	fi
+
+view_rdc:
+	@latest=$$(ls -td $(RESULTS_DIR)/rdc/run_* 2>/dev/null | head -1); \
+	if [ -n "$$latest" ]; then \
+		firefox "$$latest/index.html" & \
+	fi
+
+
+##############################################################################
 # Utilities
 ##############################################################################
 
@@ -230,6 +263,16 @@ clean:
 distclean: clean
 	@rm -rf $(RESULTS_DIR) $(LOG_DIR) $(CONFIG_DIR)/*.f
 	@echo "Deep clean completed ✓"
+# 清理旧的运行（保留最近N次）
+clean_old_runs:
+	@echo "Cleaning old run directories (keeping latest 5)..."
+	@for goal in lint cdc rdc; do \
+		if [ -d "$(RESULTS_DIR)/$$goal" ]; then \
+			cd $(RESULTS_DIR)/$$goal && \
+			ls -t | tail -n +6 | xargs -r rm -rf; \
+		fi; \
+	done
+	@echo "Old runs cleaned ✓"
 
 debug:
 	@echo "=== Debug Information ==="
