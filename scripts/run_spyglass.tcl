@@ -1,5 +1,6 @@
 #!/usr/bin/env sg_shell
-# Main Spyglass Runner - P-2019 Compatible with Enhanced Debugging
+# Main Spyglass Runner - Simplified (No Directory Switching)
+# Version: 2.1 - Production Ready
 
 puts "DEBUG: run_spyglass.tcl started"
 puts "DEBUG: Script path: [info script]"
@@ -23,23 +24,26 @@ source [file join $script_dir "run_goals.tcl"]
 puts "DEBUG: run_goals.tcl loaded"
 
 ##############################################################################
-# Main Execution
+# Main Execution Function
 ##############################################################################
 
 proc main {goal_type} {
     log_msg "INFO" "========================================="
     log_msg "INFO" "Spyglass Runner Started"
     log_msg "INFO" "Goal: $goal_type"
+    log_msg "INFO" "Working Directory: [pwd]"
     log_msg "INFO" "========================================="
     
-    # Setup project
+    # Load configuration
     load_config_from_env
+    
+    # Setup project (in current directory)
     if {[setup_spyglass_project] != 0} {
         log_msg "ERROR" "Project setup failed"
         return 1
     }
     
-    # Load goal configuration (already loaded at source time, but ensure it's current)
+    # Load goal configuration
     load_goal_config
     
     # Run requested goal
@@ -83,11 +87,11 @@ proc main {goal_type} {
 
 puts "DEBUG: Checking for goal specification..."
 
-# First try environment variable
+# Get goal from environment variable (P-2019 compatible mode)
 set goal [get_env_var "SG_GOAL" ""]
 puts "DEBUG: SG_GOAL from environment: '$goal'"
 
-# If not set, try command line
+# Fallback to command line arguments if needed
 if {$goal eq ""} {
     puts "DEBUG: SG_GOAL not set, checking argv..."
     puts "DEBUG: argv length: [llength $argv]"
@@ -100,6 +104,7 @@ if {$goal eq ""} {
         log_msg "ERROR" "No goal specified!"
         log_msg "ERROR" "Set SG_GOAL environment variable or pass as argument"
         log_msg "INFO" "Usage: SG_GOAL=lint sg_shell -tcl run_spyglass.tcl"
+        log_msg "INFO" "   or: sg_shell -tcl run_spyglass.tcl lint (newer versions)"
         puts "DEBUG: Exiting with code 1"
         exit 1
     }
@@ -113,7 +118,7 @@ puts "DEBUG: About to call main function with goal: $goal"
 set exit_code [main $goal]
 puts "DEBUG: main returned: $exit_code"
 
-# Ensure exit code is valid
+# Ensure exit code is valid (non-negative)
 if {$exit_code < 0} {
     puts "DEBUG: Negative exit code detected, converting to 1"
     set exit_code 1

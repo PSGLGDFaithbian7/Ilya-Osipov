@@ -1,5 +1,6 @@
 #!/usr/bin/env sg_shell
-# Setup Project Script - P-2019 Compatible Version
+# Setup Project Script - Simplified (No Directory Switching)
+# Version: 2.1 - Production Ready
 
 # Source common procedures
 set script_dir [file dirname [info script]]
@@ -26,14 +27,15 @@ proc load_config_from_env {} {
     log_msg "INFO" "Configuration loaded:"
     log_msg "INFO" "  Project: $PROJECT_NAME"
     log_msg "INFO" "  Top Modules: $TOP_MODULES"
+    log_msg "INFO" "  RTL Filelist: $RTL_FILELIST"
     log_msg "INFO" "  Build Tag: $BUILD_TAG"
-    log_msg "INFO" "  Reuse: $REUSE_MODE"
+    log_msg "INFO" "  Reuse Mode: $REUSE_MODE"
     
     return 0
 }
 
 ##############################################################################
-# Project Setup
+# Project Setup (No Directory Switching)
 ##############################################################################
 
 proc setup_spyglass_project {} {
@@ -41,8 +43,9 @@ proc setup_spyglass_project {} {
     global SG_WAIVER_FILE REUSE_MODE DEBUG_MODE
     
     log_msg "INFO" "Setting up Spyglass project: $PROJECT_NAME"
+    log_msg "INFO" "Working directory: [pwd]"
     
-    # Handle project creation/reuse
+    # Handle project creation/reuse (in current directory)
     if {$REUSE_MODE && [file exists "${PROJECT_NAME}.prj"]} {
         log_msg "INFO" "Reusing existing project"
         if {[catch {open_project ${PROJECT_NAME}.prj} err]} {
@@ -57,11 +60,14 @@ proc setup_spyglass_project {} {
         }
     }
     
-    # Read design files
-    if {![validate_file $RTL_FILELIST "RTL filelist"]} {
+    # Validate RTL filelist exists
+    if {![file exists $RTL_FILELIST]} {
+        log_msg "ERROR" "RTL filelist not found: $RTL_FILELIST"
         return -1
     }
+    log_msg "INFO" "RTL filelist found: $RTL_FILELIST"
     
+    # Read design files
     log_msg "INFO" "Reading RTL files from: $RTL_FILELIST"
     if {[catch {read_file -type sourcelist $RTL_FILELIST} err]} {
         log_msg "ERROR" "Failed to read RTL files: $err"
@@ -72,6 +78,8 @@ proc setup_spyglass_project {} {
     if {[file exists $INCLUDE_FILELIST]} {
         log_msg "INFO" "Applying include configuration"
         apply_include_config $INCLUDE_FILELIST
+    } else {
+        log_msg "WARNING" "Include filelist not found: $INCLUDE_FILELIST"
     }
     
     # Apply waivers (optional)
@@ -93,30 +101,46 @@ proc setup_spyglass_project {} {
 ##############################################################################
 
 proc apply_include_config {config_file} {
+    if {![file exists $config_file]} {
+        log_msg "WARNING" "Include config file not found: $config_file"
+        return
+    }
+    
     set fp [open $config_file r]
     while {[gets $fp line] >= 0} {
         set line [string trim $line]
+        
+        # Skip comments and empty lines
         if {$line eq "" || [string match "#*" $line]} {
             continue
         }
         
+        # Parse +incdir+ directive
         if {[string match "+incdir+*" $line]} {
             set incdir [string range $line 8 end]
+            
             if {[file isdirectory $incdir]} {
                 if {[catch {set_option incdir $incdir} err]} {
                     log_msg "WARNING" "Failed to set incdir $incdir: $err"
                 } else {
                     log_msg "INFO" "Added include directory: $incdir"
                 }
+            } else {
+                log_msg "WARNING" "Include directory not found: $incdir"
             }
-        } elseif {[string match "+include+*" $line]} {
+        } 
+        # Parse +include+ directive
+        elseif {[string match "+include+*" $line]} {
             set incfile [string range $line 9 end]
+            
             if {[file exists $incfile]} {
                 if {[catch {read_file -type verilog $incfile} err]} {
                     log_msg "WARNING" "Failed to include file $incfile: $err"
                 } else {
                     log_msg "INFO" "Included file: $incfile"
                 }
+            } else {
+                log_msg "WARNING" "Include file not found: $incfile"
             }
         }
     }
@@ -128,7 +152,7 @@ proc configure_analysis_options {top_module} {
     
     log_msg "INFO" "Configuring analysis options for: $top_module (P-2019 compatible)"
     
-    # ===== 基础配置（P-2019兼容）=====
+    # Basic configuration (P-2019 compatible)
     if {[catch {set_option enableSV yes} err]} {
         log_msg "WARNING" "enableSV option not supported: $err"
     }
@@ -137,12 +161,7 @@ proc configure_analysis_options {top_module} {
         log_msg "WARNING" "language_mode option not supported: $err"
     }
     
-    # ===== 以下选项在P-2019的sg_shell中不支持，仅GUI支持 =====
-    # set_option designread_enable_synthesis yes  # ← 注释掉
-    # set_option enable_gated_clock_conversion yes  # ← 可能不支持
-    # set_option enable_clock_domain_analysis yes  # ← 可能不支持
-    
-    # ===== 时钟/复位检测（使用catch容错）=====
+    # Clock/reset detection (use catch for compatibility)
     if {[catch {set_option auto_detect_clock_reset yes} err]} {
         log_msg "INFO" "auto_detect_clock_reset not available (using defaults)"
     }
@@ -151,7 +170,7 @@ proc configure_analysis_options {top_module} {
         log_msg "INFO" "handle_default_clocking_block not available"
     }
     
-    # ===== 调试选项 =====
+    # Debug options
     if {$DEBUG_MODE} {
         if {[catch {set_option verbose yes} err]} {
             log_msg "WARNING" "verbose option not supported: $err"
@@ -160,7 +179,7 @@ proc configure_analysis_options {top_module} {
         }
     }
     
-    # ===== Lint检查配置（保守模式）=====
+    # Lint checking configuration (conservative)
     if {[catch {set_option check_FSM yes} err]} {
         log_msg "INFO" "check_FSM not available"
     }
@@ -173,6 +192,10 @@ proc configure_analysis_options {top_module} {
 ##############################################################################
 
 if {[info script] eq $argv0} {
+    log_msg "INFO" "========================================="
+    log_msg "INFO" "Running setup_project.tcl in standalone mode"
+    log_msg "INFO" "========================================="
+    
     load_config_from_env
     
     if {[setup_spyglass_project] == 0} {
@@ -181,6 +204,9 @@ if {[info script] eq $argv0} {
             exit 1
         }
         log_msg "INFO" "Project saved successfully"
+        log_msg "INFO" "========================================="
+        log_msg "INFO" "Setup completed successfully"
+        log_msg "INFO" "========================================="
         exit 0
     } else {
         log_msg "ERROR" "Project setup failed"
