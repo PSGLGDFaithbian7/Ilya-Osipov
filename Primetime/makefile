@@ -1,735 +1,591 @@
-# Industrial-grade Makefile for PrimeTime Power Analysis and STA (v2.0)
-# Author: Generated for professional EDA workflow
-# Date: $(shell date)
-# Version: 2.0 - Enhanced with comprehensive error handling and validation
+#==============================================================================
+# PrimeTime Analysis Framework - Complete Makefile
+# Version: 3.0
+# Author: Professional EDA Team
+# Description: Complete flow control for PrimeTime STA and Power Analysis
+#==============================================================================
+
+SHELL := /bin/bash
+.ONESHELL:
+.SHELLFLAGS := -euo pipefail -c
 
 #==============================================================================
 # CONFIGURATION VARIABLES
 #==============================================================================
 
-# Tool settings with validation
-PT_SHELL := pt_shell
-DESIGN_NAME ?= top_module
-RUN_DIR := ./runs/$(shell date +%Y%m%d_%H%M%S)
+# Tool Settings
+PT_SHELL ?= pt_shell
+PT_VERSION_MIN ?= 2019.06
 
-# File paths (can be overridden from command line)
+# Design Configuration
+DESIGN_NAME ?= top_module
+TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)
+RUN_NAME ?= run_$(TIMESTAMP)
+RUN_DIR := ./runs/$(RUN_NAME)
+
+# Input Files
 NETLIST ?= ./netlist/$(DESIGN_NAME).v
 VCD_FILE ?= ./simulation/$(DESIGN_NAME).vcd
-SDC_FILE ?= ./constraints/$(DESIGN_NAME).sdc
-LIB_FILES ?= ./libs/*.lib
 SAIF_FILE ?= ./simulation/$(DESIGN_NAME).saif
+SDC_FILE ?= ./constraints/$(DESIGN_NAME).sdc
+SPEF_FILE ?= ./spef/$(DESIGN_NAME).spef
 
-# Technology and library settings
+# Library Configuration
 TARGET_LIBRARY ?= typical.lib
 LINK_LIBRARY ?= "* $(TARGET_LIBRARY)"
 SEARCH_PATH ?= ./libs ./netlist ./constraints
 
-# Analysis settings
-CLOCK_PERIOD ?= 10.0
+# Operating Conditions
 VOLTAGE ?= 1.0
 TEMPERATURE ?= 25
 PROCESS ?= typical
+CLOCK_PERIOD ?= 10.0
 
-# Activity file priority (VCD has higher priority than SAIF)
+# Analysis Options
 ACTIVITY_PRIORITY ?= VCD_FIRST
+POWER_MODE ?= averaged
+STA_MODE ?= graph_based
 
-# Output settings
+# Debug and Reporting Options
+DEBUG ?= 0
+VERBOSE ?= 0
+STEP_MODE ?= 0
+QUICK ?= 0
+REPORT_HISTOGRAM ?= 1
+REPORT_DETAILED ?= 1
+EMAIL ?=
+
+# Directory Structure
+TCL_DIR := ./tcl
+TCL_MODULES := $(TCL_DIR)/modules
+TCL_FLOWS := $(TCL_DIR)/flows
+TCL_CONFIG := $(TCL_DIR)/config
+
 REPORT_DIR := $(RUN_DIR)/reports
 LOG_DIR := $(RUN_DIR)/logs
-SCRIPT_DIR := ./scripts
+CHECKPOINT_DIR := $(RUN_DIR)/checkpoints
+CONFIG_DIR := $(RUN_DIR)/config
+SCRIPT_DIR := $(RUN_DIR)/scripts
+
+# Generated Files
+RUN_CONFIG := $(CONFIG_DIR)/run_config.tcl
+RUN_INFO := $(CONFIG_DIR)/run_info.txt
 
 #==============================================================================
-# DERIVED VARIABLES
+# COLORS FOR OUTPUT
 #==============================================================================
 
-STA_SCRIPT := $(SCRIPT_DIR)/sta_analysis.tcl
-POWER_SCRIPT := $(SCRIPT_DIR)/power_analysis.tcl
-COMMON_SCRIPT := $(SCRIPT_DIR)/pt_common.tcl
-LOG_FILE := $(LOG_DIR)/pt_run.log
-STA_LOG := $(LOG_DIR)/sta_analysis.log
-POWER_LOG := $(LOG_DIR)/power_analysis.log
-
-#==============================================================================
-# VALIDATION TARGETS
-#==============================================================================
-
-.PHONY: all clean setup sta power full_analysis help check_files validate_tools check_pt_version
-
-# Validate PrimeTime installation
-validate_tools:
-	@echo "=== Validating EDA Tools ==="
-	@which $(PT_SHELL) > /dev/null 2>&1 || \
-		(echo "ERROR: PrimeTime ($(PT_SHELL)) not found in PATH. Please check installation." && exit 1)
-	@echo "✓ PrimeTime found: $$(which $(PT_SHELL))"
-	@$(PT_SHELL) -version 2>/dev/null | head -5 || \
-		(echo "WARNING: Could not retrieve PrimeTime version info")
-	@echo "Tool validation completed"
-
-# Check PrimeTime version compatibility
-check_pt_version: validate_tools
-	@echo "=== Checking PrimeTime Version Compatibility ==="
-	@$(PT_SHELL) -f $(SCRIPT_DIR)/version_check.tcl 2>/dev/null || \
-		echo "WARNING: Version check failed - proceeding with caution"
+RED := \033[0;31m
+GREEN := \033[0;32m
+YELLOW := \033[0;33m
+BLUE := \033[0;34m
+NC := \033[0m # No Color
 
 #==============================================================================
 # MAIN TARGETS
 #==============================================================================
 
-all: full_analysis
+.PHONY: all sta power full setup check clean help
 
-# Complete analysis flow with validation
-full_analysis: validate_tools setup check_files sta power
-	@echo "=== Full PrimeTime Analysis Complete ==="
-	@echo "Reports available in: $(REPORT_DIR)"
-	@echo "Logs available in: $(LOG_DIR)"
-	@echo "Summary: $$(make summary_stats)"
+# Default target
+all: full
 
-# Setup directory structure
-setup:
-	@echo "=== Setting up directory structure ==="
-	mkdir -p $(RUN_DIR) $(REPORT_DIR) $(LOG_DIR) $(SCRIPT_DIR)
-	@echo "Run directory: $(RUN_DIR)"
+# Full analysis (STA + Power)
+full: setup check
+	@echo -e "$(BLUE)┌────────────────────────────────────────────────┐$(NC)"
+	@echo -e "$(BLUE)│  Full Analysis: STA + Power                    │$(NC)"
+	@echo -e "$(BLUE)│  Run: $(RUN_NAME)                              │$(NC)"
+	@echo -e "$(BLUE)└────────────────────────────────────────────────┘$(NC)"
+	@$(MAKE) generate_config
+	@$(MAKE) run_full
+	@$(MAKE) generate_summary
+	@$(MAKE) final_message
 
-# Enhanced file validation
+# Static Timing Analysis only
+sta: setup check
+	@echo -e "$(BLUE)┌────────────────────────────────────────────────┐$(NC)"
+	@echo -e "$(BLUE)│  Static Timing Analysis                        │$(NC)"
+	@echo -e "$(BLUE)│  Run: $(RUN_NAME)                              │$(NC)"
+	@echo -e "$(BLUE)└────────────────────────────────────────────────┘$(NC)"
+	@$(MAKE) generate_config
+	@$(MAKE) run_sta
+	@$(MAKE) sta_summary
+	@$(MAKE) final_message
+
+# Power Analysis only
+power: setup check
+	@echo -e "$(BLUE)┌────────────────────────────────────────────────┐$(NC)"
+	@echo -e "$(BLUE)│  Power Analysis                                │$(NC)"
+	@echo -e "$(BLUE)│  Run: $(RUN_NAME)                              │$(NC)"
+	@echo -e "$(BLUE)└────────────────────────────────────────────────┘$(NC)"
+	@$(MAKE) generate_config
+	@$(MAKE) run_power
+	@$(MAKE) power_summary
+	@$(MAKE) final_message
+
+#==============================================================================
+# SETUP AND VALIDATION TARGETS
+#==============================================================================
+
+setup: create_directories save_run_info
+	@echo -e "$(GREEN)✓$(NC) Setup completed successfully"
+	@echo "  Run directory: $(RUN_DIR)"
+	@if [ "$(DEBUG)" = "1" ]; then \
+		echo -e "  $(YELLOW)Debug mode: ENABLED$(NC)"; \
+	fi
+	@if [ "$(QUICK)" = "1" ]; then \
+		echo -e "  $(YELLOW)Quick mode: ENABLED$(NC)"; \
+	fi
+
+create_directories:
+	@echo "Creating directory structure..."
+	@mkdir -p $(REPORT_DIR)/{timing,power,qor}
+	@mkdir -p $(LOG_DIR) $(CHECKPOINT_DIR) $(CONFIG_DIR) $(SCRIPT_DIR)
+	@mkdir -p ./archives
+
+save_run_info:
+	@echo "Saving run information..."
+	@cat > $(RUN_INFO) << EOF
+	Run Name: $(RUN_NAME)
+	Timestamp: $(TIMESTAMP)
+	Design: $(DESIGN_NAME)
+	User: $(USER)
+	Host: $(HOSTNAME)
+	PWD: $(PWD)
+	Command: make $(MAKECMDGOALS)
+	EOF
+
+check: check_tools check_files check_version
+	@echo -e "$(GREEN)✓$(NC) All checks passed"
+
+check_tools:
+	@echo -n "Checking PrimeTime installation... "
+	@which $(PT_SHELL) > /dev/null 2>&1 || \
+		(echo -e "$(RED)ERROR: $(PT_SHELL) not found$(NC)" && exit 1)
+	@echo -e "$(GREEN)OK$(NC) [$(shell which $(PT_SHELL))]"
+
 check_files:
-	@echo "=== Checking input files ==="
-	@test -f "$(NETLIST)" || (echo "ERROR: Netlist file not found: $(NETLIST)" && exit 1)
-	@echo "✓ Netlist found: $(NETLIST)"
-	
-	# Check netlist format
-	@if grep -q "SystemVerilog\|interface\|package\|class" "$(NETLIST)" 2>/dev/null; then \
-		echo "WARNING: Netlist appears to contain SystemVerilog constructs"; \
-		echo "         PrimeTime may require DB format for full SystemVerilog support"; \
-	fi
-	
-	@test -f "$(SDC_FILE)" || echo "WARNING: SDC file not found: $(SDC_FILE) - will use basic constraints"
-	
-	# Activity file priority check
-	@if [ "$(ACTIVITY_PRIORITY)" = "VCD_FIRST" ]; then \
-		if [ -f "$(VCD_FILE)" ]; then \
-			echo "✓ VCD file found (priority): $(VCD_FILE)"; \
-		elif [ -f "$(SAIF_FILE)" ]; then \
-			echo "✓ SAIF file found (fallback): $(SAIF_FILE)"; \
-		else \
-			echo "WARNING: No activity files found - using default toggle rates"; \
-		fi; \
+	@echo "Checking input files..."
+	@test -f "$(NETLIST)" || \
+		(echo -e "$(RED)ERROR: Netlist not found: $(NETLIST)$(NC)" && exit 1)
+	@echo -e "  $(GREEN)✓$(NC) Netlist: $(NETLIST)"
+	@test -f "$(SDC_FILE)" || \
+		echo -e "  $(YELLOW)⚠$(NC) SDC file not found: $(SDC_FILE)"
+	@test -f "$(VCD_FILE)" || test -f "$(SAIF_FILE)" || \
+		echo -e "  $(YELLOW)⚠$(NC) No activity file found"
+	@test -f "$(SPEF_FILE)" || \
+		echo -e "  $(YELLOW)⚠$(NC) No SPEF file found"
+
+check_version:
+	@echo -n "Checking PrimeTime version... "
+	@$(PT_SHELL) -f $(TCL_CONFIG)/version_check.tcl \
+		-output_log_file $(LOG_DIR)/version_check.log 2>/dev/null || \
+		echo -e "$(YELLOW)WARNING: Version check failed$(NC)"
+
+#==============================================================================
+# CONFIGURATION GENERATION
+#==============================================================================
+
+generate_config:
+	@echo "Generating run configuration..."
+	@$(PT_SHELL) -f $(TCL_CONFIG)/config_generator.tcl \
+		-x "generate_config {$(RUN_CONFIG)} { \
+			DESIGN_NAME {$(DESIGN_NAME)} \
+			RUN_NAME {$(RUN_NAME)} \
+			TIMESTAMP {$(TIMESTAMP)} \
+			NETLIST {$(realpath $(NETLIST))} \
+			SDC_FILE {$(shell realpath $(SDC_FILE) 2>/dev/null || echo "")} \
+			VCD_FILE {$(shell realpath $(VCD_FILE) 2>/dev/null || echo "")} \
+			SAIF_FILE {$(shell realpath $(SAIF_FILE) 2>/dev/null || echo "")} \
+			SPEF_FILE {$(shell realpath $(SPEF_FILE) 2>/dev/null || echo "")} \
+			TARGET_LIBRARY {$(TARGET_LIBRARY)} \
+			LINK_LIBRARY {$(LINK_LIBRARY)} \
+			SEARCH_PATH {$(SEARCH_PATH)} \
+			VOLTAGE {$(VOLTAGE)} \
+			TEMPERATURE {$(TEMPERATURE)} \
+			PROCESS {$(PROCESS)} \
+			CLOCK_PERIOD {$(CLOCK_PERIOD)} \
+			ACTIVITY_PRIORITY {$(ACTIVITY_PRIORITY)} \
+			POWER_MODE {$(POWER_MODE)} \
+			STA_MODE {$(STA_MODE)} \
+			REPORT_DIR {$(realpath $(REPORT_DIR))} \
+			LOG_DIR {$(realpath $(LOG_DIR))} \
+			CHECKPOINT_DIR {$(realpath $(CHECKPOINT_DIR))} \
+			DEBUG {$(DEBUG)} \
+			VERBOSE {$(VERBOSE)} \
+			STEP_MODE {$(STEP_MODE)} \
+			QUICK {$(QUICK)} \
+			REPORT_HISTOGRAM {$(REPORT_HISTOGRAM)} \
+			REPORT_DETAILED {$(REPORT_DETAILED)} \
+			EMAIL {$(EMAIL)} \
+			TCL_MODULES {$(realpath $(TCL_MODULES))} \
+		}" -output_log_file $(LOG_DIR)/config_gen.log
+	@echo -e "$(GREEN)✓$(NC) Configuration generated: $(RUN_CONFIG)"
+
+#==============================================================================
+# RUN TARGETS
+#==============================================================================
+
+run_sta:
+	@echo "Running STA analysis..."
+	@cd $(RUN_DIR) && \
+		$(PT_SHELL) -f $(realpath $(TCL_FLOWS)/sta_flow.tcl) \
+		-x "set ::RUN_CONFIG {$(realpath $(RUN_CONFIG))}" \
+		2>&1 | tee $(LOG_DIR)/sta.log
+	@if [ $${PIPESTATUS[0]} -eq 0 ]; then \
+		echo -e "$(GREEN)✓$(NC) STA completed successfully"; \
 	else \
-		echo "INFO: Activity priority set to $(ACTIVITY_PRIORITY)"; \
+		echo -e "$(RED)✗$(NC) STA failed - check $(LOG_DIR)/sta.log"; \
+		exit 1; \
 	fi
-	@echo "File validation completed"
 
-# Static Timing Analysis
-sta: validate_tools setup $(STA_SCRIPT) $(COMMON_SCRIPT)
-	@echo "=== Running Static Timing Analysis ==="
-	cd $(RUN_DIR) && $(PT_SHELL) -f ../$(STA_SCRIPT) | tee $(STA_LOG)
-	@if [ $$? -eq 0 ]; then echo "✓ STA completed successfully"; else echo "✗ STA failed - check $(STA_LOG)"; exit 1; fi
+run_power:
+	@echo "Running power analysis..."
+	@cd $(RUN_DIR) && \
+		$(PT_SHELL) -f $(realpath $(TCL_FLOWS)/power_flow.tcl) \
+		-x "set ::RUN_CONFIG {$(realpath $(RUN_CONFIG))}" \
+		2>&1 | tee $(LOG_DIR)/power.log
+	@if [ $${PIPESTATUS[0]} -eq 0 ]; then \
+		echo -e "$(GREEN)✓$(NC) Power analysis completed successfully"; \
+	else \
+		echo -e "$(RED)✗$(NC) Power analysis failed - check $(LOG_DIR)/power.log"; \
+		exit 1; \
+	fi
 
-# Power Analysis
-power: validate_tools setup $(POWER_SCRIPT) $(COMMON_SCRIPT) check_files
-	@echo "=== Running Power Analysis ==="
-	cd $(RUN_DIR) && $(PT_SHELL) -f ../$(POWER_SCRIPT) | tee $(POWER_LOG)
-	@if [ $$? -eq 0 ]; then echo "✓ Power analysis completed successfully"; else echo "✗ Power analysis failed - check $(POWER_LOG)"; exit 1; fi
-
-#==============================================================================
-# SCRIPT GENERATION
-#==============================================================================
-
-# Generate version check script
-$(SCRIPT_DIR)/version_check.tcl: setup
-	@cat > $(SCRIPT_DIR)/version_check.tcl << 'EOF'
-# PrimeTime version compatibility check
-if {[catch {set pt_version [get_app_var pt_version]} err]} {
-    puts "WARNING: Cannot determine PrimeTime version"
-    exit 0
-}
-
-puts "PrimeTime Version: $pt_version"
-
-# Check for minimum version requirements
-set min_version "2019.06"
-if {[package vcompare $pt_version $min_version] < 0} {
-    puts "WARNING: PrimeTime version $pt_version may not support all features"
-    puts "         Recommended minimum version: $min_version"
-}
-
-exit 0
-EOF
-
-# Generate enhanced STA script
-$(STA_SCRIPT): setup
-	@echo "=== Generating Enhanced STA TCL script ==="
-	@cat > $(STA_SCRIPT) << 'EOF'
-#!/usr/bin/tclsh
-#==============================================================================
-# PrimeTime Static Timing Analysis Script (Enhanced)
-# Generated automatically by Makefile v2.0
-#==============================================================================
-# Source common setup
-source [file dirname [info script]]/pt_common.tcl
-
-proc run_sta_analysis {} {
-    global DESIGN_NAME REPORT_DIR
-    
-    puts "Starting Static Timing Analysis for $DESIGN_NAME"
-    
-    # Enhanced error handling
-    if {[catch {
-        # Read design
-        read_netlist_and_setup
-        
-        # Apply constraints
-        apply_timing_constraints
-        
-        # Update timing
-        update_timing -full
-        
-        # Generate timing reports
-        generate_timing_reports
-        
-    } error_msg]} {
-        handle_analysis_error "STA" $error_msg
-        return -code error
-    }
-    
-    puts "STA Analysis completed successfully"
-    report_runtime "STA"
-}
-
-proc apply_timing_constraints {} {
-    global DESIGN_NAME
-    
-    if {[file exists "../constraints/${DESIGN_NAME}.sdc"]} {
-        if {[catch {read_sdc "../constraints/${DESIGN_NAME}.sdc"} err]} {
-            puts "WARNING: SDC read failed: $err"
-            puts "Applying basic constraints instead"
-            setup_basic_constraints
-        } else {
-            puts "Applied SDC constraints successfully"
-        }
-    } else {
-        puts "No SDC file found, applying basic constraints"
-        setup_basic_constraints
-    }
-}
-
-proc generate_timing_reports {} {
-    global REPORT_DIR DESIGN_NAME
-    
-    puts "Generating comprehensive timing reports..."
-    
-    # Setup analysis with error checking
-    if {[catch {report_analysis_setup} err]} {
-        puts "WARNING: Setup analysis failed: $err"
-    } else {
-        redirect -file "${REPORT_DIR}/setup_analysis.rpt" {report_analysis_setup}
-    }
-    
-    # Timing summary
-    redirect -file "${REPORT_DIR}/timing_summary.rpt" {report_timing_summary}
-    
-    # Critical paths with enhanced reporting
-    redirect -file "${REPORT_DIR}/critical_paths_setup.rpt" {
-        report_timing -delay_type max -max_paths 100 -nworst 10 -input_pins -nets -transition_time -capacitance
-    }
-    
-    redirect -file "${REPORT_DIR}/critical_paths_hold.rpt" {
-        report_timing -delay_type min -max_paths 100 -nworst 10 -input_pins -nets
-    }
-    
-    # Clock reports
-    if {[llength [all_clocks]] > 0} {
-        redirect -file "${REPORT_DIR}/clock_skew.rpt" {report_clock -skew}
-        redirect -file "${REPORT_DIR}/clock_timing.rpt" {report_clock_timing}
-    }
-    
-    # Constraint violations
-    redirect -file "${REPORT_DIR}/violations.rpt" {report_constraint -all_violators}
-    
-    # Design statistics
-    redirect -file "${REPORT_DIR}/design_stats.rpt" {report_design}
-    
-    puts "All timing reports generated in $REPORT_DIR"
-}
-
-# Execute main analysis with global error handling
-if {[catch {run_sta_analysis} global_error]} {
-    puts "FATAL ERROR in STA: $global_error"
-    exit 1
-}
-
-exit 0
-EOF
-
-# Generate enhanced power analysis script
-$(POWER_SCRIPT): setup
-	@echo "=== Generating Enhanced Power Analysis TCL script ==="
-	@cat > $(POWER_SCRIPT) << 'EOF'
-#!/usr/bin/tclsh
-#==============================================================================
-# PrimeTime Power Analysis Script (Enhanced)
-# Generated automatically by Makefile v2.0
-#==============================================================================
-
-# Source common setup
-source [file dirname [info script]]/pt_common.tcl
-
-proc run_power_analysis {} {
-    global DESIGN_NAME REPORT_DIR VCD_FILE SAIF_FILE
-    
-    puts "Starting Power Analysis for $DESIGN_NAME"
-    
-    # Enhanced error handling
-    if {[catch {
-        # Read design and setup
-        read_netlist_and_setup
-        
-        # Set power analysis mode
-        configure_power_analysis
-        
-        # Read activity file with priority handling
-        read_activity_data_enhanced
-        
-        # Set operating conditions for power
-        set_operating_conditions_power
-        
-        # Update power
-        update_power
-        
-        # Generate power reports
-        generate_power_reports
-        
-    } error_msg]} {
-        handle_analysis_error "Power" $error_msg
-        return -code error
-    }
-    
-    puts "Power Analysis completed successfully"
-    report_runtime "Power"
-}
-
-proc configure_power_analysis {} {
-    # Enhanced power analysis configuration
-    set_app_var power_enable_analysis true
-    set_app_var power_analysis_mode averaged
-    set_app_var power_clock_network_include_register_clock_pin_power false
-    set_app_var power_analysis_effort high
-    
-    puts "Power analysis configured with enhanced settings"
-}
-
-proc read_activity_data_enhanced {} {
-    global VCD_FILE SAIF_FILE DESIGN_NAME ACTIVITY_PRIORITY
-    
-    set activity_loaded false
-    
-    # Priority-based activity file loading
-    if {$ACTIVITY_PRIORITY eq "VCD_FIRST"} {
-        if {[info exists VCD_FILE] && [file exists $VCD_FILE]} {
-            if {[catch {
-                read_vcd $VCD_FILE -strip_path $DESIGN_NAME
-                set_power_analysis_options -waveform_format vcd -waveform_output vcd
-                puts "Successfully loaded VCD file: $VCD_FILE"
-                set activity_loaded true
-            } err]} {
-                puts "WARNING: VCD read failed: $err"
-            }
-        }
-        
-        if {!$activity_loaded && [info exists SAIF_FILE] && [file exists $SAIF_FILE]} {
-            if {[catch {
-                read_saif $SAIF_FILE -strip_path $DESIGN_NAME
-                set_power_analysis_options -waveform_format saif
-                puts "Successfully loaded SAIF file: $SAIF_FILE"
-                set activity_loaded true
-            } err]} {
-                puts "WARNING: SAIF read failed: $err"
-            }
-        }
-    }
-    
-    if {!$activity_loaded} {
-        puts "No valid activity file found, using default toggle rates"
-        set_switching_activity -static_probability 0.5 -toggle_rate 0.1 [all_inputs]
-        if {[llength [all_registers]] > 0} {
-            set_switching_activity -static_probability 0.5 -toggle_rate 0.05 [all_registers]
-        }
-    }
-}
-
-proc set_operating_conditions_power {} {
-    global VOLTAGE TEMPERATURE PROCESS
-    
-    # Check if library supports the specified corner
-    set available_corners [list_lib_groups]
-    if {[llength $available_corners] > 0 && [lsearch $available_corners $PROCESS] == -1} {
-        puts "WARNING: Process corner '$PROCESS' not found in library"
-        puts "Available corners: $available_corners"
-        puts "Using default operating conditions"
-    }
-    
-    # Set operating conditions with error handling
-    if {[catch {
-        set_operating_conditions -voltage $VOLTAGE -temperature $TEMPERATURE
-        puts "Set operating conditions: ${VOLTAGE}V, ${TEMPERATURE}C, $PROCESS corner"
-    } err]} {
-        puts "WARNING: Failed to set operating conditions: $err"
-        puts "Proceeding with library defaults"
-    }
-}
-
-proc generate_power_reports {} {
-    global REPORT_DIR DESIGN_NAME
-    
-    puts "Generating comprehensive power reports..."
-    
-    # Power summary
-    redirect -file "${REPORT_DIR}/power_summary.rpt" {report_power -hierarchy}
-    
-    # Detailed power breakdown
-    redirect -file "${REPORT_DIR}/power_detailed.rpt" {
-        report_power -cell_power -net_power -switch_power -leakage_power -verbose
-    }
-    
-    # Power by hierarchy
-    redirect -file "${REPORT_DIR}/power_hierarchy.rpt" {report_power -hierarchy -levels 3}
-    
-    # Clock power
-    if {[llength [all_clocks]] > 0} {
-        redirect -file "${REPORT_DIR}/clock_power.rpt" {report_power -clock_network}
-    }
-    
-    # Rail analysis (if applicable)
-    if {[catch {set rails [all_power_rails]} err] == 0 && [llength $rails] > 0} {
-        redirect -file "${REPORT_DIR}/rail_status.rpt" {report_rail_connection_status}
-        redirect -file "${REPORT_DIR}/rail_power.rpt" {report_power -rail}
-    }
-    
-    # Switching activity
-    redirect -file "${REPORT_DIR}/switching_activity.rpt" {
-        report_switching_activity -list_not_annotated
-    }
-    
-    # Power analysis quality
-    redirect -file "${REPORT_DIR}/power_analysis_setup.rpt" {report_power_analysis_setup}
-    
-    puts "All power reports generated in $REPORT_DIR"
-}
-
-# Execute main analysis with global error handling
-if {[catch {run_power_analysis} global_error]} {
-    puts "FATAL ERROR in Power Analysis: $global_error"
-    exit 1
-}
-
-exit 0
-EOF
-
-# Generate enhanced common TCL procedures
-$(COMMON_SCRIPT): setup
-	@echo "=== Generating Enhanced Common TCL procedures ==="
-	@cat > $(COMMON_SCRIPT) << 'EOF'
-#==============================================================================
-# Enhanced Common PrimeTime TCL Procedures
-# Shared functions for STA and Power Analysis with robust error handling
-#==============================================================================
-
-# Global variables from Makefile
-set DESIGN_NAME "$(DESIGN_NAME)"
-set NETLIST "$(NETLIST)"
-set TARGET_LIBRARY "$(TARGET_LIBRARY)"
-set LINK_LIBRARY "$(LINK_LIBRARY)"
-set SEARCH_PATH "$(SEARCH_PATH)"
-set CLOCK_PERIOD $(CLOCK_PERIOD)
-set VOLTAGE $(VOLTAGE)
-set TEMPERATURE $(TEMPERATURE)
-set PROCESS "$(PROCESS)"
-set REPORT_DIR "../$(REPORT_DIR)"
-set VCD_FILE "$(VCD_FILE)"
-set SAIF_FILE "$(SAIF_FILE)"
-set ACTIVITY_PRIORITY "$(ACTIVITY_PRIORITY)"
-
-# Enhanced library setup with validation
-proc setup_libraries {} {
-    global TARGET_LIBRARY LINK_LIBRARY SEARCH_PATH
-    
-    # Set search path with validation
-    set valid_paths {}
-    foreach path [split $SEARCH_PATH] {
-        if {[file isdirectory $path]} {
-            lappend valid_paths $path
-        } else {
-            puts "WARNING: Search path not found: $path"
-        }
-    }
-    
-    if {[llength $valid_paths] > 0} {
-        set search_path $valid_paths
-    } else {
-        puts "ERROR: No valid search paths found"
-        return -code error "Invalid search paths"
-    }
-    
-    # Validate target library
-    if {![file exists [which $TARGET_LIBRARY]]} {
-        puts "ERROR: Target library not found: $TARGET_LIBRARY"
-        return -code error "Missing target library"
-    }
-    
-    # Set libraries
-    set target_library $TARGET_LIBRARY
-    set link_library $LINK_LIBRARY
-    
-    puts "Libraries configured successfully:"
-    puts "  Target: $target_library"
-    puts "  Link: $link_library"
-    puts "  Search paths: $search_path"
-}
-
-# Enhanced netlist reading with format detection
-proc read_netlist_and_setup {} {
-    global DESIGN_NAME NETLIST
-    
-    # Setup libraries first
-    setup_libraries
-    
-    # Validate netlist exists
-    if {![file exists $NETLIST]} {
-        return -code error "Netlist file not found: $NETLIST"
-    }
-    
-    puts "Reading netlist: $NETLIST"
-    
-    # Determine file format and read accordingly
-    set file_ext [file extension $NETLIST]
-    switch -nocase $file_ext {
-        ".v" -
-        ".verilog" {
-            read_verilog $NETLIST
-        }
-        ".sv" {
-            puts "WARNING: SystemVerilog detected - consider using DB format"
-            read_verilog $NETLIST
-        }
-        ".db" {
-            read_db $NETLIST
-        }
-        default {
-            puts "WARNING: Unknown netlist format, attempting Verilog read"
-            read_verilog $NETLIST
-        }
-    }
-    
-    # Set current design with validation
-    if {[catch {current_design $DESIGN_NAME} err]} {
-        puts "Available designs: [get_designs]"
-        return -code error "Design $DESIGN_NAME not found: $err"
-    }
-    
-    # Link design with validation
-    if {[catch {link_design} err]} {
-        return -code error "Link failed: $err"
-    }
-    
-    puts "Design $DESIGN_NAME loaded and linked successfully"
-}
-
-# Enhanced constraint setup
-proc setup_basic_constraints {} {
-    global CLOCK_PERIOD DESIGN_NAME
-    
-    # Find clocks in design
-    set clocks [all_clocks]
-    
-    if {[llength $clocks] == 0} {
-        # Search for clock-like ports
-        set clock_candidates {}
-        foreach port [get_object_name [all_inputs]] {
-            if {[regexp -nocase {clk|clock} $port]} {
-                lappend clock_candidates $port
-            }
-        }
-        
-        if {[llength $clock_candidates] > 0} {
-            set clock_port [lindex $clock_candidates 0]
-            create_clock -period $CLOCK_PERIOD [get_ports $clock_port]
-            puts "Created clock on $clock_port with period $CLOCK_PERIOD ns"
-        } else {
-            puts "WARNING: No clock ports found - timing analysis may be incomplete"
-        }
-    }
-    
-    # Set input/output delays only if clocks exist
-    if {[llength [all_clocks]] > 0} {
-        set_input_delay -clock [get_clocks] [expr $CLOCK_PERIOD * 0.1] [all_inputs]
-        set_output_delay -clock [get_clocks] [expr $CLOCK_PERIOD * 0.1] [all_outputs]
-        puts "Applied basic I/O timing constraints"
-    }
-}
-
-# Enhanced error handling
-proc handle_analysis_error {analysis_type error_msg} {
-    global REPORT_DIR
-    
-    puts "ERROR in $analysis_type Analysis: $error_msg"
-    
-    # Write detailed error log
-    set error_file "${REPORT_DIR}/error_${analysis_type}.log"
-    set fp [open $error_file "w"]
-    puts $fp "$analysis_type Analysis Error Report"
-    puts $fp "========================================="
-    puts $fp "Timestamp: [clock format [clock seconds]]"
-    puts $fp "Error: $error_msg"
-    puts $fp ""
-    puts $fp "Environment:"
-    puts $fp "  Design: $::DESIGN_NAME"
-    puts $fp "  Netlist: $::NETLIST"
-    puts $fp "  PrimeTime Version: [get_app_var pt_version]"
-    puts $fp ""
-    puts $fp "Call Stack:"
-    puts $fp [join [info level 0] "\n"]
-    close $fp
-    
-    puts "Detailed error log written to: $error_file"
-}
-
-# Enhanced runtime reporting
-proc report_runtime {analysis_type} {
-    global REPORT_DIR
-    
-    set runtime_file "${REPORT_DIR}/runtime_${analysis_type}.rpt"
-    set fp [open $runtime_file "w"]
-    
-    puts $fp "$analysis_type Runtime Report"
-    puts $fp "================================"
-    puts $fp "Timestamp: [clock format [clock seconds]]"
-    
-    # Safe memory and CPU reporting
-    if {[catch {set memory [get_app_var memory_usage]} err]} {
-        set memory "N/A (error: $err)"
-    }
-    if {[catch {set cpu [get_app_var cpu_time]} err]} {
-        set cpu "N/A (error: $err)"
-    }
-    
-    puts $fp "Memory usage: $memory"
-    puts $fp "CPU time: $cpu"
-    puts $fp "Analysis type: $analysis_type"
-    
-    close $fp
-    puts "Runtime report generated: $runtime_file"
-}
-
-puts "Enhanced common TCL procedures loaded successfully"
-EOF
+run_full:
+	@echo "Running full analysis..."
+	@cd $(RUN_DIR) && \
+		$(PT_SHELL) -f $(realpath $(TCL_FLOWS)/full_flow.tcl) \
+		-x "set ::RUN_CONFIG {$(realpath $(RUN_CONFIG))}" \
+		2>&1 | tee $(LOG_DIR)/full.log
+	@if [ $${PIPESTATUS[0]} -eq 0 ]; then \
+		echo -e "$(GREEN)✓$(NC) Full analysis completed successfully"; \
+	else \
+		echo -e "$(RED)✗$(NC) Full analysis failed - check $(LOG_DIR)/full.log"; \
+		exit 1; \
+	fi
 
 #==============================================================================
-# ENHANCED TARGETS
+# SUMMARY AND REPORTING TARGETS
 #==============================================================================
 
-# Enhanced regression testing with both STA and Power
-regression: validate_tools setup
-	@echo "=== Running Enhanced Multi-Corner Analysis ==="
+generate_summary:
+	@echo ""
+	@echo -e "$(BLUE)═══════════════════════════════════════════════$(NC)"
+	@echo -e "$(BLUE) Analysis Complete$(NC)"
+	@echo -e "$(BLUE)═══════════════════════════════════════════════$(NC)"
+	@if [ -f "$(REPORT_DIR)/summary.txt" ]; then \
+		cat $(REPORT_DIR)/summary.txt; \
+	fi
+	@echo ""
+	@echo "Reports: $(REPORT_DIR)"
+	@echo "Logs: $(LOG_DIR)"
+
+sta_summary:
+	@if [ -f "$(REPORT_DIR)/timing/summary.rpt" ]; then \
+		echo ""; \
+		echo -e "$(BLUE)=== STA Summary ===$(NC)"; \
+		head -30 $(REPORT_DIR)/timing/summary.rpt; \
+	fi
+
+power_summary:
+	@if [ -f "$(REPORT_DIR)/power/summary.rpt" ]; then \
+		echo ""; \
+		echo -e "$(BLUE)=== Power Summary ===$(NC)"; \
+		head -30 $(REPORT_DIR)/power/summary.rpt; \
+	fi
+
+final_message:
+	@echo ""
+	@echo -e "$(GREEN)════════════════════════════════════════════════$(NC)"
+	@echo -e "$(GREEN) ✓ Analysis Completed Successfully$(NC)"
+	@echo -e "$(GREEN)════════════════════════════════════════════════$(NC)"
+	@echo " Run: $(RUN_NAME)"
+	@echo " Time: $(shell date)"
+	@echo ""
+
+#==============================================================================
+# REGRESSION AND MULTI-CORNER ANALYSIS
+#==============================================================================
+
+regression:
+	@echo -e "$(BLUE)Running multi-corner regression...$(NC)"
 	@for corner in fast typical slow; do \
-		echo "Analyzing $$corner corner (STA + Power)..."; \
-		$(MAKE) sta PROCESS=$$corner RUN_DIR=./runs/$${corner}_sta || exit 1; \
-		$(MAKE) power PROCESS=$$corner RUN_DIR=./runs/$${corner}_power || exit 1; \
+		echo -e "$(YELLOW)═══ Running $$corner corner ═══$(NC)"; \
+		$(MAKE) full PROCESS=$$corner RUN_NAME=regr_$${corner}_$(TIMESTAMP) || exit 1; \
 	done
-	@echo "Multi-corner regression completed successfully"
+	@echo -e "$(GREEN)✓$(NC) Regression complete"
+	@$(MAKE) regression_summary
 
-# Enhanced summary with time-sorted reports
-summary:
-	@echo "=== Generating Time-Sorted Analysis Summary ==="
-	@if [ -d "./runs" ]; then \
-		find ./runs -name "*.rpt" -printf "%T@ %p\n" | sort -n | while read timestamp file; do \
-			echo "Report: $$file (Modified: $$(date -d @$${timestamp%.*} '+%Y-%m-%d %H:%M:%S'))"; \
-			echo "--- Summary (first 10 lines) ---"; \
-			head -10 "$$file" 2>/dev/null || echo "Cannot read file"; \
-			echo ""; \
-		done; \
+regression_summary:
+	@echo ""
+	@echo -e "$(BLUE)═══ Regression Summary ═══$(NC)"
+	@for dir in ./runs/regr_*_$(TIMESTAMP); do \
+		if [ -d "$$dir" ]; then \
+			corner=$$(basename $$dir | cut -d_ -f2); \
+			echo -e "$(YELLOW)$$corner corner:$(NC)"; \
+			grep -h "WNS\|TNS" $$dir/reports/summary.txt 2>/dev/null || echo "  No timing data"; \
+			grep -h "Total Power" $$dir/reports/summary.txt 2>/dev/null || echo "  No power data"; \
+		fi; \
+	done
+
+#==============================================================================
+# DEBUG AND DEVELOPMENT TARGETS
+#==============================================================================
+
+debug: DEBUG=1
+debug: VERBOSE=1
+debug: full
+	@echo -e "$(YELLOW)Debug run complete with enhanced logging$(NC)"
+
+step: STEP_MODE=1
+step: DEBUG=1
+step: full
+	@echo -e "$(YELLOW)Step-by-step run complete$(NC)"
+
+interactive:
+	@echo -e "$(BLUE)Starting interactive PrimeTime session...$(NC)"
+	@$(MAKE) setup generate_config
+	@cd $(RUN_DIR) && $(PT_SHELL) -gui -x "source $(realpath $(RUN_CONFIG))"
+
+quick-sta: QUICK=1
+quick-sta: VERBOSE=0
+quick-sta: REPORT_DETAILED=0
+quick-sta: sta
+	@echo -e "$(GREEN)Quick STA complete$(NC)"
+
+#==============================================================================
+# BATCH AND COMPARISON TARGETS
+#==============================================================================
+
+batch:
+	@if [ -z "$(DESIGNS)" ]; then \
+		echo -e "$(RED)Usage: make batch DESIGNS='design1 design2 design3'$(NC)"; \
+		exit 1; \
+	fi
+	@echo -e "$(BLUE)Running batch analysis...$(NC)"
+	@for design in $(DESIGNS); do \
+		echo -e "$(YELLOW)═══ Processing $$design ═══$(NC)"; \
+		$(MAKE) full DESIGN_NAME=$$design RUN_NAME=batch_$${design}_$(TIMESTAMP); \
+	done
+	@echo -e "$(GREEN)✓$(NC) Batch processing complete"
+
+compare-runs:
+	@if [ -z "$(RUN1)" ] || [ -z "$(RUN2)" ]; then \
+		echo -e "$(RED)Usage: make compare-runs RUN1=run_xxx RUN2=run_yyy$(NC)"; \
+		exit 1; \
+	fi
+	@echo -e "$(BLUE)Comparing $(RUN1) vs $(RUN2):$(NC)"
+	@echo -e "$(YELLOW)═══ Timing Comparison ═══$(NC)"
+	@diff -u ./runs/$(RUN1)/reports/timing/summary.rpt \
+	         ./runs/$(RUN2)/reports/timing/summary.rpt | head -50 || true
+	@echo -e "$(YELLOW)═══ Power Comparison ═══$(NC)"
+	@diff -u ./runs/$(RUN1)/reports/power/summary.rpt \
+	         ./runs/$(RUN2)/reports/power/summary.rpt | head -50 || true
+
+#==============================================================================
+# UTILITY TARGETS
+#==============================================================================
+
+list-runs:
+	@echo -e "$(BLUE)Available runs:$(NC)"
+	@ls -lt ./runs 2>/dev/null | head -20 || echo "No runs found"
+
+latest:
+	@LATEST=$$(ls -t ./runs | head -1); \
+	if [ -n "$$LATEST" ]; then \
+		echo -e "$(BLUE)Latest run: $$LATEST$(NC)"; \
+		echo "Reports:"; \
+		find ./runs/$$LATEST/reports -name "*.rpt" -type f | head -10; \
 	else \
-		echo "No runs directory found"; \
+		echo "No runs found"; \
 	fi
 
-# Quick statistics summary
-summary_stats:
-	@if [ -d "./runs" ]; then \
-		echo "Analysis Statistics:"; \
-		echo "- Total runs: $$(find ./runs -maxdepth 1 -type d | wc -l)"; \
-		echo "- Total reports: $$(find ./runs -name "*.rpt" | wc -l)"; \
-		echo "- Total logs: $$(find ./runs -name "*.log" | wc -l)"; \
-		echo "- Latest run: $$(ls -t ./runs | head -1)"; \
+stats:
+	@echo -e "$(BLUE)═══ Analysis Statistics ═══$(NC)"
+	@echo "Total runs: $$(ls -d ./runs/* 2>/dev/null | wc -l)"
+	@echo "Disk usage: $$(du -sh ./runs 2>/dev/null | cut -f1)"
+	@LATEST=$$(ls -t ./runs | head -1); \
+	if [ -n "$$LATEST" ]; then \
+		echo "Latest run: $$LATEST"; \
+		echo "  Reports: $$(find ./runs/$$LATEST -name '*.rpt' | wc -l)"; \
+		echo "  Logs: $$(find ./runs/$$LATEST -name '*.log' | wc -l)"; \
+		echo "  Size: $$(du -sh ./runs/$$LATEST | cut -f1)"; \
 	fi
 
-# Safe clean with confirmation for production use
+archive:
+	@if [ -z "$(RUN)" ]; then \
+		echo -e "$(RED)Usage: make archive RUN=run_name$(NC)"; \
+		exit 1; \
+	fi
+	@echo "Archiving $(RUN)..."
+	@tar czf ./archives/$(RUN).tar.gz -C ./runs $(RUN)
+	@echo -e "$(GREEN)✓$(NC) Archived to ./archives/$(RUN).tar.gz"
+
+extract:
+	@if [ -z "$(ARCHIVE)" ]; then \
+		echo -e "$(RED)Usage: make extract ARCHIVE=archive_name$(NC)"; \
+		exit 1; \
+	fi
+	@echo "Extracting $(ARCHIVE)..."
+	@tar xzf ./archives/$(ARCHIVE).tar.gz -C ./runs
+	@echo -e "$(GREEN)✓$(NC) Extracted to ./runs/"
+
+#==============================================================================
+# CLEAN TARGETS
+#==============================================================================
+
 clean:
-	@echo "=== Cleaning Up (Enhanced) ==="
-	@echo "This will remove:"
-	@echo "  - Generated TCL scripts in $(SCRIPT_DIR)"
-	@echo "  - Current run directory: $(RUN_DIR)"
+	@echo -e "$(YELLOW)This will remove run: $(RUN_NAME)$(NC)"
 	@read -p "Continue? [y/N]: " confirm; \
 	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
 		rm -rf $(RUN_DIR); \
-		rm -f $(SCRIPT_DIR)/pt_*.tcl $(SCRIPT_DIR)/sta_*.tcl $(SCRIPT_DIR)/power_*.tcl $(SCRIPT_DIR)/version_check.tcl; \
-		echo "Cleanup completed"; \
+		echo -e "$(GREEN)Run removed$(NC)"; \
 	else \
-		echo "Cleanup cancelled"; \
+		echo "Cancelled"; \
 	fi
 
-# Clean all runs (dangerous - requires double confirmation)
-clean_all:
-	@echo "WARNING: This will delete ALL run data in ./runs/"
-	@read -p "Are you absolutely sure? Type 'DELETE_ALL' to confirm: " confirm; \
-	if [ "$$confirm" = "DELETE_ALL" ]; then \
+clean-latest:
+	@LATEST=$$(ls -t ./runs | head -1); \
+	if [ -n "$$LATEST" ]; then \
+		echo -e "$(YELLOW)Remove latest run: $$LATEST?$(NC)"; \
+		read -p "[y/N]: " confirm; \
+		if [ "$$confirm" = "y" ]; then \
+			rm -rf ./runs/$$LATEST; \
+			echo -e "$(GREEN)Removed$(NC)"; \
+		fi; \
+	else \
+		echo "No runs found"; \
+	fi
+
+clean-all:
+	@echo -e "$(RED)WARNING: This will remove ALL runs!$(NC)"
+	@read -p "Type 'DELETE ALL' to confirm: " confirm; \
+	if [ "$$confirm" = "DELETE ALL" ]; then \
 		rm -rf ./runs; \
-		echo "All run data deleted"; \
+		mkdir ./runs; \
+		echo -e "$(GREEN)All runs removed$(NC)"; \
 	else \
-		echo "Operation cancelled"; \
+		echo "Cancelled"; \
 	fi
 
-# Enhanced help
+#==============================================================================
+# HELP TARGET
+#==============================================================================
+
 help:
-	@echo "Enhanced PrimeTime Analysis Makefile"
-	@echo "===================================================="
 	@echo ""
-	@echo "Usage: make [target] [VARIABLE=value]"
+	@echo -e "$(BLUE)╔══════════════════════════════════════════════════════════╗$(NC)"
+	@echo -e "$(BLUE)║  PrimeTime Analysis Framework v3.0                      ║$(NC)"
+	@echo -e "$(BLUE)║  Complete STA and Power Analysis Solution               ║$(NC)"
+	@echo -e "$(BLUE)╚══════════════════════════════════════════════════════════╝$(NC)"
 	@echo ""
-	@echo "Main Targets:"
-	@echo "  all              - Run complete analysis (STA + Power) with validation"
-	@echo "  sta              - Run Static Timing Analysis only"
-	@echo "  power            - Run Power Analysis only"
-	@echo "  regression       - Multi-corner analysis (fast/typical/slow)"
-	@echo "  setup            - Setup directory structure"
-	@echo "  validate_tools   - Check PrimeTime installation"
-	@echo "  check_files      - Verify input files exist and validate formats"
-	@echo "  summary          - Time-sorted report summary"
-	@echo "  clean            - Remove current run (with confirmation)"
-	@echo "  clean_all        - Remove all runs (requires double confirmation)"
-	@echo "  help             - Show this help"
+	@echo -e "$(GREEN)USAGE:$(NC)"
+	@echo "  make [target] [VARIABLE=value]"
 	@echo ""
-	@echo "Key Variables (can be overridden):"
-	@echo "  DESIGN_NAME      - Top module name (default: top_module)"
-	@echo "  NETLIST          - Path to netlist file (.v/.sv/.db supported)"
-	@echo "  VCD_FILE         - Path to VCD activity file"
-	@echo "  SAIF_FILE        - Path to SAIF activity file"
-	@echo "  SDC_FILE         - Path to SDC constraints file"
-	@echo "  CLOCK_PERIOD     - Clock period in ns (default: 10.0)"
-	@echo "  VOLTAGE          - Operating voltage (default: 1.0)"
-	@echo "  TEMPERATURE      - Operating temperature (default: 25)"
-	@echo "  ACTIVITY_PRIORITY - VCD_FIRST (default) or SAIF_FIRST"
+	@echo -e "$(GREEN)MAIN TARGETS:$(NC)"
+	@echo "  all/full    - Run complete analysis (STA + Power)"
+	@echo "  sta         - Run Static Timing Analysis only"
+	@echo "  power       - Run Power Analysis only"
 	@echo ""
-	@echo "Enhanced Features:"
-	@echo "  ✓ Tool validation and version checking"
-	@echo "  ✓ Netlist format auto-detection (.v/.sv/.db)"
-	@echo "  ✓ Activity file priority handling"
-	@echo "  ✓ Library corner validation"
-	@echo "  ✓ Comprehensive error handling and logging"
-	@echo "  ✓ Time-sorted report generation"
-	@echo "  ✓ Safe cleanup with confirmation"
+	@echo -e "$(GREEN)DEBUG TARGETS:$(NC)"
+	@echo "  debug       - Run with debug mode enabled"
+	@echo "  step        - Run with step-by-step mode"
+	@echo "  interactive - Start interactive PT session"
+	@echo "  quick-sta   - Quick STA with minimal reports"
 	@echo ""
-	@echo "Example usage:"
-	@echo "  make DESIGN_NAME=cpu_core NETLIST=./design/cpu.v VCD_FILE=./sim/cpu.vcd"
-	@echo "  make regression DESIGN_NAME=my_design"
-	@echo "  make sta ACTIVITY_PRIORITY=SAIF_FIRST"
+	@echo -e "$(GREEN)BATCH TARGETS:$(NC)"
+	@echo "  regression  - Multi-corner analysis (fast/typical/slow)"
+	@echo "  batch       - Process multiple designs"
+	@echo ""
+	@echo -e "$(GREEN)UTILITY TARGETS:$(NC)"
+	@echo "  list-runs   - List all available runs"
+	@echo "  latest      - Show latest run and reports"
+	@echo "  stats       - Show statistics"
+	@echo "  compare-runs- Compare two runs (RUN1=xxx RUN2=yyy)"
+	@echo "  archive     - Archive a run (RUN=run_name)"
+	@echo "  extract     - Extract archived run (ARCHIVE=name)"
+	@echo ""
+	@echo -e "$(GREEN)CLEAN TARGETS:$(NC)"
+	@echo "  clean       - Remove current run"
+	@echo "  clean-latest- Remove latest run"
+	@echo "  clean-all   - Remove all runs (requires confirmation)"
+	@echo ""
+	@echo -e "$(GREEN)KEY VARIABLES:$(NC)"
+	@echo "  DESIGN_NAME    - Top module name (default: top_module)"
+	@echo "  RUN_NAME       - Custom run name (default: run_TIMESTAMP)"
+	@echo "  DEBUG          - Enable debug mode (0/1)"
+	@echo "  VERBOSE        - Enable verbose output (0/1)"
+	@echo "  STEP_MODE      - Enable step-by-step execution (0/1)"
+	@echo "  QUICK          - Quick mode with minimal reports (0/1)"
+	@echo ""
+	@echo -e "$(GREEN)FILE VARIABLES:$(NC)"
+	@echo "  NETLIST        - Path to netlist file"
+	@echo "  SDC_FILE       - Path to SDC constraints"
+	@echo "  VCD_FILE       - Path to VCD activity file"
+	@echo "  SAIF_FILE      - Path to SAIF activity file"
+	@echo "  SPEF_FILE      - Path to SPEF parasitics"
+	@echo ""
+	@echo -e "$(GREEN)OPERATING CONDITIONS:$(NC)"
+	@echo "  VOLTAGE        - Operating voltage (default: 1.0)"
+	@echo "  TEMPERATURE    - Operating temperature (default: 25)"
+	@echo "  PROCESS        - Process corner (default: typical)"
+	@echo "  CLOCK_PERIOD   - Clock period in ns (default: 10.0)"
+	@echo ""
+	@echo -e "$(GREEN)EXAMPLES:$(NC)"
+	@echo "  make sta DESIGN_NAME=cpu_core"
+	@echo "  make power DEBUG=1 VCD_FILE=./sim/test.vcd"
+	@echo "  make regression DESIGN_NAME=my_chip"
+	@echo "  make batch DESIGNS='cpu gpu dsp'"
+	@echo "  make compare-runs RUN1=run_20240101 RUN2=run_20240102"
+	@echo ""
+	@echo -e "$(BLUE)For more information, see docs/user_guide.md$(NC)"
 	@echo ""
 
-.PRECIOUS: $(STA_SCRIPT) $(POWER_SCRIPT) $(COMMON_SCRIPT)
+#==============================================================================
+# SPECIAL TARGETS
+#==============================================================================
+
+.PHONY: test
+test:
+	@echo -e "$(BLUE)Running self-test...$(NC)"
+	@echo "Checking directory structure..."
+	@test -d $(TCL_MODULES) || (echo -e "$(RED)ERROR: TCL modules not found$(NC)" && exit 1)
+	@test -d $(TCL_FLOWS) || (echo -e "$(RED)ERROR: TCL flows not found$(NC)" && exit 1)
+	@test -d $(TCL_CONFIG) || (echo -e "$(RED)ERROR: TCL config not found$(NC)" && exit 1)
+	@echo -e "$(GREEN)✓$(NC) Directory structure OK"
+	@echo "Checking TCL modules..."
+	@for i in {00..10}; do \
+		test -f $(TCL_MODULES)/$${i}_*.tcl || echo -e "$(YELLOW)WARNING: Module $$i not found$(NC)"; \
+	done
+	@echo -e "$(GREEN)✓$(NC) TCL modules OK"
+	@echo -e "$(GREEN)Self-test passed$(NC)"
+
+.PHONY: install
+install:
+	@echo -e "$(BLUE)Installing PrimeTime Analysis Framework...$(NC)"
+	@mkdir -p tcl/{modules,flows,config}
+	@mkdir -p {libs,netlist,constraints,simulation,spef,archives,docs,examples}
+	@echo -e "$(GREEN)✓$(NC) Directory structure created"
+	@echo "Please copy TCL modules to tcl/modules/"
+	@echo "Please copy flow scripts to tcl/flows/"
+	@echo "Installation complete!"
+
+.PHONY: version
+version:
+	@echo "PrimeTime Analysis Framework"
+	@echo "Version: 3.0"
+	@echo "Date: $(shell date)"
+	@echo "PrimeTime: $(shell $(PT_SHELL) -version 2>/dev/null | head -1 || echo 'Not found')"
+
+#==============================================================================
+# DEPENDENCY MANAGEMENT
+#==============================================================================
+
+# Ensure TCL modules exist before running flows
+$(TCL_FLOWS)/%.tcl: $(TCL_MODULES)
+$(RUN_CONFIG): generate_config
+
+#==============================================================================
+# END OF MAKEFILE
+#==============================================================================

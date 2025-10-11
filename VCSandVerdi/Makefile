@@ -1,7 +1,7 @@
 # ============================================================================
 # Industrial IC Automation Makefile for VCS+Verdi - Enhanced Version
 # Supports UVM, Non-UVM, Coverage, Performance Analysis
-# Author: IC Verification Team
+# Author: Ilya “Monesy” Osipov 
 # Version: 2.0
 # ============================================================================
 
