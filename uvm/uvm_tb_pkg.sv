@@ -1,19 +1,26 @@
+// uvm/uvm_tb_pkg.sv
 `include "uvm_macros.svh"
 import uvm_pkg::*;
 
 package uvm_tb_pkg;
 
-  // Transaction class
+  // ============================================================================
+  // Transaction Class
+  // ============================================================================
   class mul_transaction extends uvm_sequence_item;
     rand bit [7:0] a, b;
     bit [15:0] result;
     bit [15:0] expected;
+    int transaction_id;
+    int input_cycle;
+    int output_cycle;
     
     `uvm_object_utils_begin(mul_transaction)
       `uvm_field_int(a, UVM_ALL_ON)
       `uvm_field_int(b, UVM_ALL_ON) 
       `uvm_field_int(result, UVM_ALL_ON)
       `uvm_field_int(expected, UVM_ALL_ON)
+      `uvm_field_int(transaction_id, UVM_ALL_ON)
     `uvm_object_utils_end
     
     function new(string name = "mul_transaction");
@@ -30,32 +37,19 @@ package uvm_tb_pkg;
     }
     
     function string convert2string();
-      return $sformatf("a=%0d, b=%0d, expected=%0d, result=%0d", 
-                       a, b, expected, result);
+      return $sformatf("ID=%0d, a=%0d, b=%0d, expected=%0d, result=%0d", 
+                       transaction_id, a, b, expected, result);
     endfunction
   endclass
 
-  // Sequence class
-  class mul_sequence extends uvm_sequence#(mul_transaction);
-    `uvm_object_utils(mul_sequence)
-    
-    int num_trans = 100;
-    
-    function new(string name = "mul_sequence");
-      super.new(name);
-    endfunction
-    
-    task body();
-      repeat(num_trans) begin
-        `uvm_do(req)
-      end
-    endtask
-  endclass
-
+  // ============================================================================
   // Sequencer
+  // ============================================================================
   typedef uvm_sequencer#(mul_transaction) mul_sequencer;
 
+  // ============================================================================
   // Driver
+  // ============================================================================
   class mul_driver extends uvm_driver#(mul_transaction);
     `uvm_component_utils(mul_driver)
     
@@ -85,222 +79,301 @@ package uvm_tb_pkg;
         vif.cb_driver.a <= req.a;
         vif.cb_driver.b <= req.b;
         
-        `uvm_info("DRIVER", $sformatf("Driving: %s", req.convert2string()), UVM_DEBUG)
+        `uvm_info("DRIVER", $sformatf("Driving: a=%0d, b=%0d at cycle %0d", 
+                  req.a, req.b, vif.cycle_counter), UVM_HIGH)
         
         seq_item_port.item_done();
       end
     endtask
   endclass
 
-  // Monitor
+  // ============================================================================
+  // Monitor with Automatic Latency Detection
+  // ============================================================================
   class mul_monitor extends uvm_monitor;
     `uvm_component_utils(mul_monitor)
     
     virtual dut_if vif;
     uvm_analysis_port#(mul_transaction) ap;
     
-    // Coverage
-    covergroup cg_operations @(vif.cb_monitor);
-      option.per_instance = 1;
-      
-      a_cp: coverpoint vif.cb_monitor.a {
-        bins zero = {8'h00};
-        bins max = {8'hFF};
-        bins low = {[8'h00:8'h0F]};
-        bins mid_low = {[8'h10:8'h7F]};
-        bins mid_high = {[8'h80:8'hEF]};
-        bins high = {[8'hF0:8'hFE]};
-      }
-      
-      b_cp: coverpoint vif.cb_monitor.b {
-        bins zero = {8'h00};
-        bins max = {8'hFF};
-        bins low = {[8'h00:8'h0F]};
-        bins mid_low = {[8'h10:8'h7F]};
-        bins mid_high = {[8'h80:8'hEF]};
-        bins high = {[8'hF0:8'hFE]};
-      }
-      
-      out_cp: coverpoint vif.cb_monitor.out {
-        bins zero = {16'h0000};
-        bins low = {[16'h0001:16'h00FF]};
-        bins mid = {[16'h0100:16'hFE00]};
-        bins high = {[16'hFE01:16'hFFFE]};
-        bins max = {16'hFFFF};
-      }
-      
-      a_b_cross: cross a_cp, b_cp;
-    endgroup
+    // 延迟检测相关
+    int detected_latency = -1;
+    bit latency_detected = 0;
+    int max_detection_cycles = 20;
+    
+    // 事务跟踪
+    mul_transaction pending_queue[$];
+    int transaction_id = 0;
+    
+    // 统计
+    int total_transactions = 0;
+    int matched_transactions = 0;
     
     function new(string name, uvm_component parent);
       super.new(name, parent);
       ap = new("ap", this);
-      cg_operations = new();
     endfunction
     
     function void build_phase(uvm_phase phase);
       super.build_phase(phase);
       if(!uvm_config_db#(virtual dut_if)::get(this, "", "vif", vif))
-        `uvm_fatal("MONITOR", "Could not get vif from config_db")
+        `uvm_fatal("MONITOR", "Could not get vif")
+        
+      // 尝试从配置获取已知延迟
+      if(uvm_config_db#(int)::get(this, "", "pipeline_latency", detected_latency)) begin
+        `uvm_info("MONITOR", $sformatf("Using configured latency: %0d", detected_latency), UVM_LOW)
+        latency_detected = 1;
+      end
     endfunction
     
     task run_phase(uvm_phase phase);
-      mul_transaction obs_txn;
+      fork
+        detect_latency();
+        monitor_transactions();
+      join_none
+    endtask
+    
+    // 自动检测延迟
+    task detect_latency();
+      mul_transaction detect_txn;
+      bit [7:0] test_a, test_b;
+      bit [15:0] expected_out;
+      int start_cycle;
+      
+      if (latency_detected) return;  // 已经知道延迟
+      
+      `uvm_info("MONITOR", "Starting automatic latency detection...", UVM_LOW)
+      
+      // 等待复位完成
+      wait(vif.rst_n == 1'b1);
+      repeat(5) @(posedge vif.clk);
+      
+      // 发送特定的测试模式
+      test_a = 8'hAA;
+      test_b = 8'h55;
+      expected_out = test_a * test_b;
+      
+      `uvm_info("MONITOR", $sformatf("Detection pattern: %0h x %0h = %0h", 
+                test_a, test_b, expected_out), UVM_LOW)
+      
+      // 等待driver发送第一个真实数据
+      wait(vif.a == test_a && vif.b == test_b);
+      start_cycle = vif.cycle_counter;
+      `uvm_info("MONITOR", $sformatf("Detection pattern seen at cycle %0d", start_cycle), UVM_LOW)
+      
+      // 等待输出出现
+      repeat(max_detection_cycles) begin
+        @(posedge vif.clk);
+        if (vif.out == expected_out) begin
+          detected_latency = vif.cycle_counter - start_cycle;
+          latency_detected = 1;
+          `uvm_info("MONITOR", $sformatf("✓ Latency detected: %0d cycles", detected_latency), UVM_LOW)
+          
+          // 保存到配置数据库
+          uvm_config_db#(int)::set(null, "*", "detected_pipeline_latency", detected_latency);
+          return;
+        end
+      end
+      
+      // 如果没检测到，使用默认值
+      `uvm_warning("MONITOR", "Could not detect latency, using default value of 4")
+      detected_latency = 4;
+      latency_detected = 1;
+    endtask
+    
+    // 监控事务
+    task monitor_transactions();
+      mul_transaction txn, out_txn;
+      int output_delay_counter = 0;
+      
+      // 等待延迟检测完成
+      wait(latency_detected == 1);
+      `uvm_info("MONITOR", $sformatf("Starting transaction monitoring with latency=%0d", 
+                detected_latency), UVM_LOW)
       
       forever begin
         @(vif.cb_monitor);
         
-        obs_txn = mul_transaction::type_id::create("obs_txn");
-        obs_txn.a = vif.cb_monitor.a;
-        obs_txn.b = vif.cb_monitor.b;
-        obs_txn.result = vif.cb_monitor.out;
+        if (!vif.rst_n) begin
+          pending_queue.delete();
+          output_delay_counter = 0;
+          transaction_id = 0;
+          continue;
+        end
         
-        ap.write(obs_txn);
-        `uvm_info("MONITOR", $sformatf("Observed: %s", obs_txn.convert2string()), UVM_DEBUG)
-      end
-    endtask
-    
-    function void report_phase(uvm_phase phase);
-      `uvm_info("COVERAGE", $sformatf("Coverage = %.2f%%", cg_operations.get_coverage()), UVM_LOW)
-    endfunction
-  endclass
-
-  // FIXED: Predictor with proper timing and ordering
-  class mul_predictor extends uvm_subscriber#(mul_transaction);
-    `uvm_component_utils(mul_predictor)
-    
-    // FIXED: Added vif declaration and build_phase
-    virtual dut_if vif;
-    uvm_analysis_port#(mul_transaction) ap;
-    
-    // FIXED: Use FIFO for ordered prediction
-    uvm_tlm_analysis_fifo#(mul_transaction) input_fifo;
-    
-    function new(string name, uvm_component parent);
-      super.new(name, parent);
-      ap = new("ap", this);
-    endfunction
-    
-    // FIXED: Added build_phase to get vif
-    function void build_phase(uvm_phase phase);
-      super.build_phase(phase);
-      if(!uvm_config_db#(virtual dut_if)::get(this, "", "vif", vif))
-        `uvm_fatal("PREDICTOR", "Could not get vif from config_db")
-      input_fifo = new("input_fifo", this);
-    endfunction
-    
-    function void connect_phase(uvm_phase phase);
-      super.connect_phase(phase);
-      this.analysis_export.connect(input_fifo.analysis_export);
-    endfunction
-    
-    // FIXED: Changed to proper write function without timing
-    function void write(mul_transaction t);
-      // Just forward to the FIFO for ordered processing
-      input_fifo.write(t);
-    endfunction
-    
-    // FIXED: Separate task for timing-sensitive prediction
-    task run_phase(uvm_phase phase);
-      mul_transaction input_txn, pred_txn;
-      
-      forever begin
-        input_fifo.get(input_txn);
+        // 捕获输入
+        txn = mul_transaction::type_id::create("input_txn");
+        txn.a = vif.cb_monitor.a;
+        txn.b = vif.cb_monitor.b;
+        txn.expected = txn.a * txn.b;
+        txn.transaction_id = transaction_id++;
+        txn.input_cycle = vif.cycle_counter;
         
-        // Create predicted transaction
-        pred_txn = mul_transaction::type_id::create("pred_txn");
-        pred_txn.copy(input_txn);
-        pred_txn.expected = input_txn.a * input_txn.b;
+        // 加入待处理队列
+        pending_queue.push_back(txn);
+        `uvm_info("MONITOR", $sformatf("Input[%0d]: a=%0d, b=%0d at cycle %0d", 
+                  txn.transaction_id, txn.a, txn.b, txn.input_cycle), UVM_HIGH)
         
-        // FIXED: Proper timing delay for pipeline
-        repeat(2) @(posedge vif.clk); // 2-cycle pipeline delay
-        
-        ap.write(pred_txn);
-        `uvm_info("PREDICTOR", $sformatf("Predicted: %s", pred_txn.convert2string()), UVM_DEBUG)
-      end
-    endtask
-  endclass
-
-  // Scoreboard with proper FIFO ordering
-  class mul_scoreboard extends uvm_scoreboard;
-    `uvm_component_utils(mul_scoreboard)
-    
-    uvm_analysis_export#(mul_transaction) exp_export;
-    uvm_analysis_export#(mul_transaction) obs_export;
-    
-    // FIXED: Use ordering FIFOs to maintain transaction sequence
-    uvm_tlm_analysis_fifo#(mul_transaction) exp_fifo;
-    uvm_tlm_analysis_fifo#(mul_transaction) obs_fifo;
-    
-    int pass_count = 0;
-    int fail_count = 0;
-    
-    function new(string name, uvm_component parent);
-      super.new(name, parent);
-    endfunction
-    
-    function void build_phase(uvm_phase phase);
-      super.build_phase(phase);
-      
-      exp_export = new("exp_export", this);
-      obs_export = new("obs_export", this);
-      exp_fifo = new("exp_fifo", this);
-      obs_fifo = new("obs_fifo", this);
-    endfunction
-    
-    function void connect_phase(uvm_phase phase);
-      super.connect_phase(phase);
-      exp_export.connect(exp_fifo.analysis_export);
-      obs_export.connect(obs_fifo.analysis_export);
-    endfunction
-    
-    task run_phase(uvm_phase phase);
-      mul_transaction exp_txn, obs_txn;
-      
-      forever begin
-        // FIXED: Sequential FIFO operations maintain order
-        fork
-          exp_fifo.get(exp_txn);
-          obs_fifo.get(obs_txn);
-        join
-        
-        // Compare in-order transactions
-        if (exp_txn.expected === obs_txn.result && 
-            exp_txn.a === obs_txn.a && exp_txn.b === obs_txn.b) begin
-          pass_count++;
-          `uvm_info("SCOREBOARD", $sformatf("PASS: %s", obs_txn.convert2string()), UVM_LOW)
-        end else begin
-          fail_count++;
-          `uvm_error("SCOREBOARD", $sformatf("FAIL: Expected=%0d, Actual=%0d, a=%0d, b=%0d", 
-                     exp_txn.expected, obs_txn.result, obs_txn.a, obs_txn.b))
+        // 检查是否有输出准备好
+        if (pending_queue.size() > detected_latency) begin
+          out_txn = pending_queue.pop_front();
+          out_txn.result = vif.cb_monitor.out;
+          out_txn.output_cycle = vif.cycle_counter;
+          
+          total_transactions++;
+          if (out_txn.result == out_txn.expected) matched_transactions++;
+          
+          ap.write(out_txn);
+          `uvm_info("MONITOR", $sformatf("Output[%0d]: result=%0d (expected=%0d) at cycle %0d", 
+                    out_txn.transaction_id, out_txn.result, out_txn.expected, 
+                    out_txn.output_cycle), UVM_HIGH)
         end
       end
     endtask
     
     function void report_phase(uvm_phase phase);
-      real pass_rate = (pass_count > 0) ? (pass_count * 100.0) / (pass_count + fail_count) : 0.0;
-      
-      `uvm_info("FINAL_REPORT", 
-                $sformatf("==== VERIFICATION RESULTS ===="), UVM_NONE)
-      `uvm_info("FINAL_REPORT", 
-                $sformatf("Pass: %0d, Fail: %0d", pass_count, fail_count), UVM_NONE)
-      `uvm_info("FINAL_REPORT", 
-                $sformatf("Pass Rate: %.2f%%", pass_rate), UVM_NONE)
-      
-      if (fail_count == 0 && pass_count > 0)
-        `uvm_info("FINAL_REPORT", "*** TEST PASSED ***", UVM_NONE)
-      else
-        `uvm_error("FINAL_REPORT", "*** TEST FAILED ***")
+      `uvm_info("MONITOR", "=====================================", UVM_NONE)
+      `uvm_info("MONITOR", $sformatf("Detected Pipeline Latency: %0d cycles", detected_latency), UVM_NONE)
+      `uvm_info("MONITOR", $sformatf("Total Transactions: %0d", total_transactions), UVM_NONE)
+      `uvm_info("MONITOR", $sformatf("Matched Transactions: %0d", matched_transactions), UVM_NONE)
+      if (pending_queue.size() > 0) begin
+        `uvm_warning("MONITOR", $sformatf("%0d transactions still in pipeline", pending_queue.size()))
+      end
+      `uvm_info("MONITOR", "=====================================", UVM_NONE)
     endfunction
   endclass
 
+  // ============================================================================
+  // Scoreboard
+  // ============================================================================
+  class mul_scoreboard extends uvm_scoreboard;
+    `uvm_component_utils(mul_scoreboard)
+    
+    uvm_analysis_export#(mul_transaction) analysis_export;
+    uvm_tlm_analysis_fifo#(mul_transaction) txn_fifo;
+    
+    int pass_count = 0;
+    int fail_count = 0;
+    int total_count = 0;
+    
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+    endfunction
+    
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      analysis_export = new("analysis_export", this);
+      txn_fifo = new("txn_fifo", this);
+    endfunction
+    
+    function void connect_phase(uvm_phase phase);
+      super.connect_phase(phase);
+      analysis_export.connect(txn_fifo.analysis_export);
+    endfunction
+    
+    task run_phase(uvm_phase phase);
+      mul_transaction txn;
+      
+      forever begin
+        txn_fifo.get(txn);
+        total_count++;
+        
+        if (txn.expected === txn.result) begin
+          pass_count++;
+          `uvm_info("SCOREBOARD", 
+                    $sformatf("[%0d] PASS: %s", total_count, txn.convert2string()), 
+                    UVM_MEDIUM)
+        end else begin
+          fail_count++;
+          `uvm_error("SCOREBOARD", 
+                     $sformatf("[%0d] FAIL: %s", total_count, txn.convert2string()))
+        end
+      end
+    endtask
+    
+    function void report_phase(uvm_phase phase);
+      real pass_rate;
+      
+      if (total_count > 0)
+        pass_rate = (pass_count * 100.0) / total_count;
+      else
+        pass_rate = 0.0;
+      
+      `uvm_info("SCOREBOARD", "=====================================", UVM_NONE)
+      `uvm_info("SCOREBOARD", "     VERIFICATION RESULTS", UVM_NONE)
+      `uvm_info("SCOREBOARD", "=====================================", UVM_NONE)
+      `uvm_info("SCOREBOARD", $sformatf("Total Tests: %0d", total_count), UVM_NONE)
+      `uvm_info("SCOREBOARD", $sformatf("Passed: %0d", pass_count), UVM_NONE)
+      `uvm_info("SCOREBOARD", $sformatf("Failed: %0d", fail_count), UVM_NONE)
+      `uvm_info("SCOREBOARD", $sformatf("Pass Rate: %.2f%%", pass_rate), UVM_NONE)
+      `uvm_info("SCOREBOARD", "=====================================", UVM_NONE)
+      
+      if (fail_count == 0 && pass_count > 0)
+        `uvm_info("SCOREBOARD", "*** ALL TESTS PASSED ***", UVM_NONE)
+      else if (fail_count > 0)
+        `uvm_error("SCOREBOARD", "*** TESTS FAILED ***")
+    endfunction
+  endclass
+
+  // ============================================================================
+  // Coverage
+  // ============================================================================
+  class mul_coverage extends uvm_subscriber#(mul_transaction);
+    `uvm_component_utils(mul_coverage)
+    
+    covergroup cg_multiplier;
+      a_cp: coverpoint txn.a {
+        bins zero = {0};
+        bins low = {[1:127]};
+        bins high = {[128:254]};
+        bins max = {255};
+      }
+      
+      b_cp: coverpoint txn.b {
+        bins zero = {0};
+        bins low = {[1:127]};
+        bins high = {[128:254]};
+        bins max = {255};
+      }
+      
+      result_cp: coverpoint txn.result {
+        bins zero = {0};
+        bins low = {[1:16383]};
+        bins mid = {[16384:49151]};
+        bins high = {[49152:65280]};
+        bins max = {65025};
+      }
+      
+      cross a_cp, b_cp;
+    endgroup
+    
+    mul_transaction txn;
+    
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+      cg_multiplier = new();
+    endfunction
+    
+    function void write(mul_transaction t);
+      txn = t;
+      cg_multiplier.sample();
+    endfunction
+    
+    function void report_phase(uvm_phase phase);
+      `uvm_info("COVERAGE", $sformatf("Coverage = %.2f%%", cg_multiplier.get_coverage()), UVM_LOW)
+    endfunction
+  endclass
+
+  // ============================================================================
   // Agent
+  // ============================================================================
   class mul_agent extends uvm_agent;
     `uvm_component_utils(mul_agent)
     
     mul_driver driver;
     mul_monitor monitor;
     mul_sequencer sequencer;
+    mul_coverage coverage;
     
     function new(string name, uvm_component parent);
       super.new(name, parent);
@@ -315,6 +388,7 @@ package uvm_tb_pkg;
       end
       
       monitor = mul_monitor::type_id::create("monitor", this);
+      coverage = mul_coverage::type_id::create("coverage", this);
     endfunction
     
     function void connect_phase(uvm_phase phase);
@@ -322,16 +396,18 @@ package uvm_tb_pkg;
       if(get_is_active() == UVM_ACTIVE) begin
         driver.seq_item_port.connect(sequencer.seq_item_export);
       end
+      monitor.ap.connect(coverage.analysis_export);
     endfunction
   endclass
 
+  // ============================================================================
   // Environment
+  // ============================================================================
   class mul_env extends uvm_env;
     `uvm_component_utils(mul_env)
     
     mul_agent agent;
     mul_scoreboard sb;
-    mul_predictor pred;
     
     function new(string name, uvm_component parent);
       super.new(name, parent);
@@ -342,98 +418,208 @@ package uvm_tb_pkg;
       
       agent = mul_agent::type_id::create("agent", this);
       sb = mul_scoreboard::type_id::create("sb", this);
-      pred = mul_predictor::type_id::create("pred", this);
     endfunction
     
     function void connect_phase(uvm_phase phase);
       super.connect_phase(phase);
       
-      // FIXED: Proper connection for ordered prediction
-      agent.monitor.ap.connect(pred.analysis_export);
-      pred.ap.connect(sb.exp_export);
-      agent.monitor.ap.connect(sb.obs_export);
+      // Connect monitor to scoreboard
+      agent.monitor.ap.connect(sb.analysis_export);
     endfunction
   endclass
 
-  // Test classes
-  class mul_base_test extends uvm_test;
-    `uvm_component_utils(mul_base_test)
+  // ============================================================================
+  // Sequences
+  // ============================================================================
+  
+  // 基础序列
+  class mul_sequence extends uvm_sequence#(mul_transaction);
+    `uvm_object_utils(mul_sequence)
+    
+    rand int num_trans;
+    
+    constraint c_num_trans {
+      num_trans inside {[10:1000]};
+    }
+    
+    function new(string name = "mul_sequence");
+      super.new(name);
+    endfunction
+    
+    task body();
+      mul_transaction txn;
+      
+      repeat(num_trans) begin
+        txn = mul_transaction::type_id::create("txn");
+        start_item(txn);
+        assert(txn.randomize());
+        finish_item(txn);
+      end
+    endtask
+  endclass
+  
+  // 用于延迟检测的特殊序列
+  class detection_sequence extends uvm_sequence#(mul_transaction);
+    `uvm_object_utils(detection_sequence)
+    
+    function new(string name = "detection_sequence");
+      super.new(name);
+    endfunction
+    
+    task body();
+      mul_transaction txn;
+      
+      // 发送特定的测试模式用于延迟检测
+      txn = mul_transaction::type_id::create("detect_txn");
+      start_item(txn);
+      txn.a = 8'hAA;
+      txn.b = 8'h55;
+      finish_item(txn);
+      
+      // 再发送几个正常的事务
+      repeat(10) begin
+        txn = mul_transaction::type_id::create("txn");
+        start_item(txn);
+        assert(txn.randomize());
+        finish_item(txn);
+      end
+    endtask
+  endclass
+
+  // ============================================================================
+  // Tests
+  // ============================================================================
+  
+  // 基础测试
+  class basic_test extends uvm_test;
+    `uvm_component_utils(basic_test)
     
     mul_env env;
+    virtual dut_if vif;
     
-    function new(string name = "mul_base_test", uvm_component parent = null);
+    function new(string name = "basic_test", uvm_component parent = null);
       super.new(name, parent);
     endfunction
     
     function void build_phase(uvm_phase phase);
       super.build_phase(phase);
       env = mul_env::type_id::create("env", this);
+      
+      if(!uvm_config_db#(virtual dut_if)::get(this, "", "vif", vif))
+        `uvm_fatal("TEST", "Could not get vif from config_db")
     endfunction
     
     task run_phase(uvm_phase phase);
-      mul_sequence seq;
+      detection_sequence det_seq;
+      mul_sequence main_seq;
       
       phase.raise_objection(this);
       
-      // Wait for reset deassertion
-      @(posedge env.agent.monitor.vif.rst_n);
-      repeat(5) @(posedge env.agent.monitor.vif.clk);
+      // 等待复位
+      wait(vif.rst_n == 1'b1);
+      repeat(5) @(posedge vif.clk);
       
-      seq = mul_sequence::type_id::create("seq");
-      if(!$value$plusargs("NUM_TRANS=%d", seq.num_trans))
-        seq.num_trans = 1000;
+      // 先运行检测序列
+      `uvm_info("TEST", "Running detection sequence...", UVM_LOW)
+      det_seq = detection_sequence::type_id::create("det_seq");
+      det_seq.start(env.agent.sequencer);
       
-      `uvm_info("TEST", $sformatf("Starting test with %0d transactions", seq.num_trans), UVM_LOW)
+      // 等待检测完成
+      repeat(20) @(posedge vif.clk);
       
-      seq.start(env.agent.sequencer);
+      // 运行主测试序列
+      `uvm_info("TEST", "Running main test sequence...", UVM_LOW)
+      main_seq = mul_sequence::type_id::create("main_seq");
+      main_seq.num_trans = 100;
+      main_seq.start(env.agent.sequencer);
       
-      // Wait for pipeline to empty
-      repeat(10) @(posedge env.agent.monitor.vif.clk);
+      // 等待流水线清空
+      repeat(20) @(posedge vif.clk);
       
       phase.drop_objection(this);
     endtask
   endclass
-
-  // Specific test for corner cases
-  class mul_corner_test extends mul_base_test;
-    `uvm_component_utils(mul_corner_test)
+  
+  // 随机测试
+  class random_test extends basic_test;
+    `uvm_component_utils(random_test)
     
-    function new(string name = "mul_corner_test", uvm_component parent = null);
+    function new(string name = "random_test", uvm_component parent = null);
       super.new(name, parent);
     endfunction
     
     task run_phase(uvm_phase phase);
-      mul_transaction corner_txns[$];
+      detection_sequence det_seq;
+      mul_sequence seq;
       
       phase.raise_objection(this);
       
-      // Wait for reset
-      @(posedge env.agent.monitor.vif.rst_n);
-      repeat(5) @(posedge env.agent.monitor.vif.clk);
+      wait(vif.rst_n == 1'b1);
+      repeat(5) @(posedge vif.clk);
       
-      // Create corner case transactions
-      corner_txns.push_back(create_txn(0, 0));       // Zero multiplication
-      corner_txns.push_back(create_txn(255, 255));   // Maximum values
-      corner_txns.push_back(create_txn(1, 255));     // Identity cases
-      corner_txns.push_back(create_txn(255, 1));
-      corner_txns.push_back(create_txn(128, 128));   // Mid-range
+      // 检测序列
+      det_seq = detection_sequence::type_id::create("det_seq");
+      det_seq.start(env.agent.sequencer);
       
-      foreach(corner_txns[i]) begin
-        env.agent.sequencer.execute_item(corner_txns[i]);
-        `uvm_info("CORNER_TEST", $sformatf("Sent: %s", corner_txns[i].convert2string()), UVM_LOW)
-      end
+      repeat(20) @(posedge vif.clk);
       
-      repeat(20) @(posedge env.agent.monitor.vif.clk);
+      // 随机测试
+      seq = mul_sequence::type_id::create("seq");
+      assert(seq.randomize() with {num_trans == 500;});
+      seq.start(env.agent.sequencer);
+      
+      repeat(20) @(posedge vif.clk);
+      
       phase.drop_objection(this);
     endtask
+  endclass
+  
+  // 约束测试
+  class constraint_test extends basic_test;
+    `uvm_component_utils(constraint_test)
     
-    function mul_transaction create_txn(bit [7:0] a, bit [7:0] b);
-      mul_transaction txn = mul_transaction::type_id::create("corner_txn");
-      txn.a = a;
-      txn.b = b;
-      txn.expected = a * b;
-      return txn;
+    function new(string name = "constraint_test", uvm_component parent = null);
+      super.new(name, parent);
     endfunction
+    
+    task run_phase(uvm_phase phase);
+      detection_sequence det_seq;
+      mul_transaction txn;
+      
+      phase.raise_objection(this);
+      
+      wait(vif.rst_n == 1'b1);
+      repeat(5) @(posedge vif.clk);
+      
+      // 检测序列
+      det_seq = detection_sequence::type_id::create("det_seq");
+      det_seq.start(env.agent.sequencer);
+      
+      repeat(20) @(posedge vif.clk);
+      
+      // 测试边界条件
+      // 0 x 0
+      txn = mul_transaction::type_id::create("txn");
+      txn.a = 0; txn.b = 0;
+      env.agent.sequencer.execute_item(txn);
+      
+      // 255 x 255
+      txn = mul_transaction::type_id::create("txn");
+      txn.a = 255; txn.b = 255;
+      env.agent.sequencer.execute_item(txn);
+      
+      // 1 x any
+      repeat(10) begin
+        txn = mul_transaction::type_id::create("txn");
+        txn.a = 1;
+        assert(txn.randomize() with {b inside {[0:255]};});
+        env.agent.sequencer.execute_item(txn);
+      end
+      
+      repeat(20) @(posedge vif.clk);
+      
+      phase.drop_objection(this);
+    endtask
   endclass
 
 endpackage
