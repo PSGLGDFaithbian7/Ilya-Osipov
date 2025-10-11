@@ -1,8 +1,8 @@
 # ============================================================================
 # Industrial IC Automation Makefile for VCS+Verdi - Enhanced Version
-# Supports UVM, Non-UVM, Coverage, Performance Analysis
-# Author: Ilya “Monesy” Osipov 
-# Version: 2.0
+# Supports UVM, Non-UVM with Shared Components Architecture (Plan A)
+# Author: Ilya "Monesy" Osipov 
+# Version: 2.1 - Plan A
 # ============================================================================
 
 # Project Configuration
@@ -16,10 +16,12 @@ VCS_HOME       ?= $(shell which vcs | xargs dirname | xargs dirname)
 VERDI_HOME     ?= $(shell which verdi | xargs dirname | xargs dirname)
 UVM_HOME       ?= $(VCS_HOME)/etc/uvm-1.2
 
-# Directory Structure
+# Directory Structure - Plan A Architecture
 SRC_DIR        := src
 TB_DIR         := testbench
-UVM_DIR        := uvm
+TB_COMMON_DIR  := $(TB_DIR)/common           # 共用组件
+TB_NON_UVM_DIR := $(TB_DIR)/non_uvm          # 非UVM专用
+TB_UVM_DIR     := $(TB_DIR)/uvm              # UVM专用（注意：在testbench下）
 SCRIPT_DIR     := scripts
 CONFIG_DIR     := config
 WORK_DIR       := work
@@ -33,19 +35,36 @@ ROOT_DIR       := $(shell pwd)
 # Timestamp for runs
 TIMESTAMP      := $(shell date +%Y%m%d_%H%M%S)
 
-# File Discovery
+# ============================================================================
+# File Discovery - Plan A: Common + Mode-Specific
+# ============================================================================
 HDL_EXTS       := .v .sv .vhdl .vhd
-SRC_FILES      := $(foreach ext,$(HDL_EXTS),$(wildcard $(SRC_DIR)/*$(ext)))
-TB_FILES       := $(foreach ext,$(HDL_EXTS),$(wildcard $(TB_DIR)/*$(ext)))
-UVM_FILES      := $(foreach ext,$(HDL_EXTS),$(wildcard $(UVM_DIR)/*$(ext)))
+
+# RTL Source files
+SRC_FILES      := $(shell find $(SRC_DIR) -name "*.v" -o -name "*.sv" -o -name "*.vhd" 2>/dev/null)
+
+# Common files - always included
+COMMON_FILES   := $(shell find $(TB_COMMON_DIR) -name "*.sv" -o -name "*.v" 2>/dev/null)
+
+# Non-UVM specific files
+NON_UVM_FILES  := $(shell find $(TB_NON_UVM_DIR) -name "*.sv" -o -name "*.v" 2>/dev/null)
+
+# UVM specific files (from testbench/uvm/, not root uvm/)
+UVM_TB_FILES   := $(shell find $(TB_UVM_DIR) -name "*.sv" -o -name "*.v" 2>/dev/null)
+
+# Legacy UVM directory support (for backward compatibility)
+UVM_DIR        := uvm
+UVM_LEGACY_FILES := $(shell find $(UVM_DIR) -name "*.sv" -o -name "*.v" 2>/dev/null)
 
 # Convert to absolute paths for VCS
-SRC_FILES_ABS  := $(addprefix $(ROOT_DIR)/,$(SRC_FILES))
-TB_FILES_ABS   := $(addprefix $(ROOT_DIR)/,$(TB_FILES))
-UVM_FILES_ABS  := $(addprefix $(ROOT_DIR)/,$(UVM_FILES))
+SRC_FILES_ABS     := $(addprefix $(ROOT_DIR)/,$(SRC_FILES))
+COMMON_FILES_ABS  := $(addprefix $(ROOT_DIR)/,$(COMMON_FILES))
+NON_UVM_FILES_ABS := $(addprefix $(ROOT_DIR)/,$(NON_UVM_FILES))
+UVM_TB_FILES_ABS  := $(addprefix $(ROOT_DIR)/,$(UVM_TB_FILES))
+UVM_LEGACY_FILES_ABS := $(addprefix $(ROOT_DIR)/,$(UVM_LEGACY_FILES))
 
-# Include directories
-INC_DIRS       := $(shell find . -name "*.vh" -o -name "*.svh" -o -name "*.h" 2>/dev/null | xargs dirname | sort -u)
+# Include directories - scan all subdirectories
+INC_DIRS       := $(shell find $(TB_DIR) $(SRC_DIR) -type d 2>/dev/null | sort -u)
 INC_FLAGS      := $(addprefix +incdir+$(ROOT_DIR)/,$(INC_DIRS))
 
 # ============================================================================
@@ -84,12 +103,25 @@ else
     SIM_PROF :=
 endif
 
-# UVM or Non-UVM Configuration
+# ============================================================================
+# File Selection Based on Mode - Plan A Logic
+# ============================================================================
 ifdef UVM_ENABLE
+    # UVM Mode: Common + UVM specific files
     VCS_COMPILE_OPTS += -ntb_opts uvm-1.2 \
                         +define+UVM_NO_DEPRECATED \
                         +define+UVM_OBJECT_MUST_HAVE_CONSTRUCTOR
-    ALL_FILES_ABS := $(UVM_FILES_ABS) $(TB_FILES_ABS) $(SRC_FILES_ABS)
+    
+    # Priority: testbench/uvm/ > legacy uvm/ directory
+    ifneq ($(UVM_TB_FILES),)
+        ALL_FILES_ABS := $(COMMON_FILES_ABS) $(UVM_TB_FILES_ABS) $(SRC_FILES_ABS)
+        TB_MODE := "UVM (testbench/uvm/)"
+    else ifneq ($(UVM_LEGACY_FILES),)
+        ALL_FILES_ABS := $(COMMON_FILES_ABS) $(UVM_LEGACY_FILES_ABS) $(SRC_FILES_ABS)
+        TB_MODE := "UVM (legacy uvm/)"
+    else
+        $(error UVM mode enabled but no UVM files found in $(TB_UVM_DIR) or $(UVM_DIR))
+    endif
     
     # UVM Simulation options
     SIM_OPTS := +UVM_TESTNAME=$(TESTCASE) \
@@ -103,7 +135,9 @@ ifdef UVM_ENABLE
         SIM_OPTS += -ucli -do $(ROOT_DIR)/$(SCRIPT_DIR)/simulate.tcl
     endif
 else
-    ALL_FILES_ABS := $(TB_FILES_ABS) $(SRC_FILES_ABS)
+    # Non-UVM Mode: Common + Non-UVM specific files
+    ALL_FILES_ABS := $(COMMON_FILES_ABS) $(NON_UVM_FILES_ABS) $(SRC_FILES_ABS)
+    TB_MODE := "Non-UVM (testbench/non_uvm/)"
     
     # Non-UVM Simulation options
     SIM_OPTS := +NUM_CASES=1000 \
@@ -139,11 +173,11 @@ CYAN        := \033[0;36m
 all: check compile sim
 
 # ============================================================================
-# Pre-flight Checks
+# Pre-flight Checks - Enhanced for Plan A
 # ============================================================================
-.PHONY: check check_tools check_files
+.PHONY: check check_tools check_files check_structure
 
-check: check_tools check_files
+check: check_tools check_structure check_files
 	@echo -e "$(GREEN)=== All checks passed ===$(NO_COLOR)"
 
 check_tools:
@@ -153,26 +187,58 @@ check_tools:
 	@which verdi > /dev/null 2>&1 || echo -e "$(YELLOW)⚠ Verdi not found (optional)$(NO_COLOR)"
 	@echo -e "$(GREEN)✓ Tools check complete$(NO_COLOR)"
 
+check_structure:
+	@echo -e "$(CYAN)=== Checking Directory Structure (Plan A) ===$(NO_COLOR)"
+	@if [ ! -d $(TB_COMMON_DIR) ]; then \
+		echo -e "$(YELLOW)⚠ Creating missing directory: $(TB_COMMON_DIR)$(NO_COLOR)"; \
+		mkdir -p $(TB_COMMON_DIR); \
+	fi
+	@if [ ! -d $(TB_NON_UVM_DIR) ]; then \
+		echo -e "$(YELLOW)⚠ Creating missing directory: $(TB_NON_UVM_DIR)$(NO_COLOR)"; \
+		mkdir -p $(TB_NON_UVM_DIR); \
+	fi
+	@if [ ! -d $(TB_UVM_DIR) ]; then \
+		echo -e "$(YELLOW)⚠ Creating missing directory: $(TB_UVM_DIR)$(NO_COLOR)"; \
+		mkdir -p $(TB_UVM_DIR); \
+	fi
+	@echo -e "$(GREEN)✓ Directory structure verified$(NO_COLOR)"
+
 check_files:
-	@echo -e "$(CYAN)=== Checking Files ===$(NO_COLOR)"
+	@echo -e "$(CYAN)=== Checking Files (Plan A Architecture) ===$(NO_COLOR)"
 	@echo "Project: $(PROJECT_NAME)"
 	@echo "Top module: $(TOP_MODULE)"
+	@echo "Testbench mode: $(TB_MODE)"
 	@echo "Working directory: $(WORK_DIR)"
 	@echo "Root directory: $(ROOT_DIR)"
 	@echo ""
 	@echo "Files found:"
-	@echo "  Source: $(words $(SRC_FILES)) file(s)"
-	@echo "  Testbench: $(words $(TB_FILES)) file(s)"
-	@echo "  UVM: $(words $(UVM_FILES)) file(s)"
+	@echo "  Source ($(SRC_DIR)/): $(words $(SRC_FILES)) file(s)"
+	@echo "  Common ($(TB_COMMON_DIR)/): $(words $(COMMON_FILES)) file(s)"
+	@echo "  Non-UVM ($(TB_NON_UVM_DIR)/): $(words $(NON_UVM_FILES)) file(s)"
+	@echo "  UVM ($(TB_UVM_DIR)/): $(words $(UVM_TB_FILES)) file(s)"
+	@if [ -n "$(UVM_LEGACY_FILES)" ]; then \
+		echo "  Legacy UVM ($(UVM_DIR)/): $(words $(UVM_LEGACY_FILES)) file(s)"; \
+	fi
 	@echo ""
 	@if [ $(words $(SRC_FILES)) -eq 0 ]; then \
 		echo -e "$(RED)✗ ERROR: No source files found in $(SRC_DIR)/$(NO_COLOR)"; \
 		exit 1; \
 	fi
-	@if [ $(words $(TB_FILES)) -eq 0 ]; then \
-		echo -e "$(RED)✗ ERROR: No testbench files found in $(TB_DIR)/$(NO_COLOR)"; \
-		exit 1; \
+	@if [ $(words $(COMMON_FILES)) -eq 0 ]; then \
+		echo -e "$(YELLOW)⚠ WARNING: No common files found in $(TB_COMMON_DIR)/$(NO_COLOR)"; \
+		echo "  Expected: dut_if.sv, dut_checker.sv"; \
 	fi
+	@ifdef UVM_ENABLE
+		@if [ $(words $(UVM_TB_FILES)) -eq 0 ] && [ $(words $(UVM_LEGACY_FILES)) -eq 0 ]; then \
+			echo -e "$(RED)✗ ERROR: UVM mode but no UVM files found$(NO_COLOR)"; \
+			exit 1; \
+		fi
+	@else
+		@if [ $(words $(NON_UVM_FILES)) -eq 0 ]; then \
+			echo -e "$(RED)✗ ERROR: No non-UVM files found in $(TB_NON_UVM_DIR)/$(NO_COLOR)"; \
+			exit 1; \
+		fi
+	@endif
 	@echo -e "$(GREEN)✓ Files check complete$(NO_COLOR)"
 
 # ============================================================================
@@ -186,14 +252,23 @@ compile: $(WORK_DIR)/simv
 compile_only: check_tools | $(WORK_DIR) $(REPORT_DIR)
 	@$(MAKE) $(WORK_DIR)/simv
 
-$(WORK_DIR)/simv: $(SRC_FILES) $(TB_FILES) | $(WORK_DIR) $(REPORT_DIR)
-	@echo -e "$(CYAN)=== Starting VCS compilation ===$(NO_COLOR)"
-	@echo "Mode: $(if $(UVM_ENABLE),$(GREEN)UVM$(NO_COLOR),$(BLUE)Non-UVM$(NO_COLOR))"
+$(WORK_DIR)/simv: $(SRC_FILES) $(COMMON_FILES) | $(WORK_DIR) $(REPORT_DIR)
+	@echo -e "$(CYAN)=== Starting VCS compilation (Plan A) ===$(NO_COLOR)"
+	@echo "Architecture: Plan A - Shared Components"
+	@echo "Mode: $(TB_MODE)"
 	@echo "Coverage: $(if $(COV_ENABLE),$(GREEN)Enabled$(NO_COLOR),$(RED)Disabled$(NO_COLOR))"
 	@echo "Profiling: $(if $(PROF_ENABLE),$(GREEN)Enabled$(NO_COLOR),$(RED)Disabled$(NO_COLOR))"
 	@echo "Top module: $(TOP_MODULE)"
-	@echo "Source files: $(words $(SRC_FILES)) file(s)"
-	@echo "Testbench files: $(words $(TB_FILES)) file(s)"
+	@echo ""
+	@echo "File breakdown:"
+	@echo "  Source files: $(words $(SRC_FILES))"
+	@echo "  Common files: $(words $(COMMON_FILES))"
+ifdef UVM_ENABLE
+	@echo "  UVM testbench files: $(words $(UVM_TB_FILES))$(if $(UVM_LEGACY_FILES), + $(words $(UVM_LEGACY_FILES)) legacy,)"
+else
+	@echo "  Non-UVM testbench files: $(words $(NON_UVM_FILES))"
+endif
+	@echo "  Total: $(words $(ALL_FILES_ABS))"
 	@echo "Timestamp: $(TIMESTAMP)"
 	@echo ""
 	@cd $(WORK_DIR) && vcs $(VCS_COMPILE_OPTS) \
@@ -222,6 +297,7 @@ $(WORK_DIR) $(REPORT_DIR) $(COV_DIR):
 
 sim: $(WORK_DIR)/simv | $(REPORT_DIR)
 	@echo -e "$(CYAN)=== Starting simulation ===$(NO_COLOR)"
+	@echo "Mode: $(TB_MODE)"
 	@echo "Test: $(TESTCASE)"
 	@echo "Seed: $(SEED)"
 	@echo "Options: $(SIM_OPTS)"
@@ -394,6 +470,15 @@ wave_archive:
 		echo -e "$(YELLOW)No waveform files to archive$(NO_COLOR)"; \
 	fi
 
+wave_auto:
+	@echo -e "$(CYAN)=== Opening Verdi with auto-loaded signals ===$(NO_COLOR)"
+	@FSDB=$$(ls -t $(WAVE_DIR)/*.fsdb 2>/dev/null | head -1); \
+	if [ -n "$$FSDB" ]; then \
+		echo "Opening with signals.tcl: $$FSDB"; \
+		verdi -ssf $$FSDB -play $(ROOT_DIR)/$(SCRIPT_DIR)/signals.tcl -nologo &; \
+	else \
+		echo -e "$(RED)No FSDB files found$(NO_COLOR)"; \
+	fi
 # ============================================================================
 # Debug and Analysis
 # ============================================================================
@@ -416,19 +501,19 @@ debug_interactive:
 
 uvm_compile:
 	@echo -e "$(CYAN)=== Compiling with UVM support ===$(NO_COLOR)"
-	@$(MAKE) compile UVM_ENABLE=1
+	@$(MAKE) compile UVM_ENABLE=1 TOP_MODULE=uvm_tb_top
 
 uvm_sim:
 	@echo -e "$(CYAN)=== Running UVM simulation ===$(NO_COLOR)"
-	@$(MAKE) sim UVM_ENABLE=1 TESTCASE=$(TESTCASE)
+	@$(MAKE) sim UVM_ENABLE=1 TOP_MODULE=uvm_tb_top TESTCASE=$(TESTCASE)
 
 uvm_regress:
 	@echo -e "$(CYAN)=== Running UVM regression ===$(NO_COLOR)"
-	@$(MAKE) compile UVM_ENABLE=1
+	@$(MAKE) compile UVM_ENABLE=1 TOP_MODULE=uvm_tb_top
 	@mkdir -p $(REPORT_DIR)/regression_$(TIMESTAMP)
 	@for test in basic_test random_test constraint_test; do \
 		echo -e "$(YELLOW)>>> Running test: $$test$(NO_COLOR)"; \
-		$(MAKE) sim UVM_ENABLE=1 TESTCASE=$$test || exit 1; \
+		$(MAKE) sim UVM_ENABLE=1 TOP_MODULE=uvm_tb_top TESTCASE=$$test || exit 1; \
 		cp $(WORK_DIR)/sim.log $(REPORT_DIR)/regression_$(TIMESTAMP)/$$test.log; \
 		echo ""; \
 	done
@@ -449,19 +534,19 @@ uvm_all:
 
 non_uvm_compile:
 	@echo -e "$(CYAN)=== Compiling non-UVM testbench ===$(NO_COLOR)"
-	@$(MAKE) compile
+	@$(MAKE) compile TOP_MODULE=tb_top
 
 non_uvm_sim:
 	@echo -e "$(CYAN)=== Running non-UVM simulation ===$(NO_COLOR)"
-	@$(MAKE) sim
+	@$(MAKE) sim TOP_MODULE=tb_top
 
 non_uvm_regress:
 	@echo -e "$(CYAN)=== Running non-UVM regression ===$(NO_COLOR)"
-	@$(MAKE) compile
+	@$(MAKE) compile TOP_MODULE=tb_top
 	@mkdir -p $(REPORT_DIR)/regression_$(TIMESTAMP)
 	@for cases in 100 500 1000; do \
 		echo -e "$(YELLOW)>>> Running with $$cases test cases$(NO_COLOR)"; \
-		$(MAKE) sim PLUSARGS="+NUM_CASES=$$cases" || exit 1; \
+		$(MAKE) sim TOP_MODULE=tb_top PLUSARGS="+NUM_CASES=$$cases" || exit 1; \
 		cp $(WORK_DIR)/sim.log $(REPORT_DIR)/regression_$(TIMESTAMP)/cases_$$cases.log; \
 		echo ""; \
 	done
@@ -519,36 +604,48 @@ clean_waves:
 	@$(MAKE) wave_clean
 
 list_files:
-	@echo -e "$(CYAN)=== Discovered Files ===$(NO_COLOR)"
+	@echo -e "$(CYAN)=== Discovered Files (Plan A Architecture) ===$(NO_COLOR)"
 	@echo ""
-	@echo "Source files ($(words $(SRC_FILES))):"
+	@echo "Source files ($(SRC_DIR)/) - $(words $(SRC_FILES)):"
 	@$(foreach file,$(SRC_FILES),echo "  $(GREEN)✓$(NO_COLOR) $(file)";)
 	@echo ""
-	@echo "Testbench files ($(words $(TB_FILES))):"
-	@$(foreach file,$(TB_FILES),echo "  $(GREEN)✓$(NO_COLOR) $(file)";)
+	@echo "Common files ($(TB_COMMON_DIR)/) - $(words $(COMMON_FILES)):"
+	@$(foreach file,$(COMMON_FILES),echo "  $(BLUE)✓$(NO_COLOR) $(file)";)
 	@echo ""
-	@if [ -n "$(UVM_FILES)" ]; then \
-		echo "UVM files ($(words $(UVM_FILES))):"; \
-		$(foreach file,$(UVM_FILES),echo "  $(GREEN)✓$(NO_COLOR) $(file)";) \
+	@echo "Non-UVM files ($(TB_NON_UVM_DIR)/) - $(words $(NON_UVM_FILES)):"
+	@$(foreach file,$(NON_UVM_FILES),echo "  $(MAGENTA)✓$(NO_COLOR) $(file)";)
+	@echo ""
+	@echo "UVM files ($(TB_UVM_DIR)/) - $(words $(UVM_TB_FILES)):"
+	@$(foreach file,$(UVM_TB_FILES),echo "  $(CYAN)✓$(NO_COLOR) $(file)";)
+	@if [ -n "$(UVM_LEGACY_FILES)" ]; then \
 		echo ""; \
+		echo "Legacy UVM files ($(UVM_DIR)/) - $(words $(UVM_LEGACY_FILES)):"; \
+		$(foreach file,$(UVM_LEGACY_FILES),echo "  $(YELLOW)✓$(NO_COLOR) $(file)";) \
 	fi
+	@echo ""
 	@echo "Include directories:"
 	@$(foreach dir,$(INC_DIRS),echo "  $(CYAN)↳$(NO_COLOR) $(dir)";)
 
 tree:
-	@echo -e "$(CYAN)=== Directory Structure ===$(NO_COLOR)"
-	@tree -L 2 -I 'work|*.log|*.fsdb|*.vcd' || ls -R
+	@echo -e "$(CYAN)=== Directory Structure (Plan A) ===$(NO_COLOR)"
+	@tree -L 3 -I 'work|*.log|*.fsdb|*.vcd' || \
+	(echo "testbench/" && \
+	 echo "├── common/       (shared: dut_if.sv, dut_checker.sv)" && \
+	 echo "├── non_uvm/      (tb_top.sv, tb_pkg.sv)" && \
+	 echo "└── uvm/          (uvm_tb_top.sv, uvm_tb_pkg.sv)")
 
 status:
-	@echo -e "$(CYAN)=== Project Status ===$(NO_COLOR)"
+	@echo -e "$(CYAN)=== Project Status (Plan A Architecture) ===$(NO_COLOR)"
 	@echo "Project: $(PROJECT_NAME)"
 	@echo "Top Module: $(TOP_MODULE)"
+	@echo "Architecture: Plan A - Shared Components"
 	@echo "Mode: $(if $(UVM_ENABLE),UVM,Non-UVM)"
 	@echo ""
-	@echo "Files:"
-	@echo "  Source: $(words $(SRC_FILES))"
-	@echo "  Testbench: $(words $(TB_FILES))"
-	@echo "  UVM: $(words $(UVM_FILES))"
+	@echo "Directory Structure:"
+	@echo "  $(TB_COMMON_DIR)/: $(words $(COMMON_FILES)) file(s)"
+	@echo "  $(TB_NON_UVM_DIR)/: $(words $(NON_UVM_FILES)) file(s)"
+	@echo "  $(TB_UVM_DIR)/: $(words $(UVM_TB_FILES)) file(s)"
+	@echo "  $(SRC_DIR)/: $(words $(SRC_FILES)) file(s)"
 	@echo ""
 	@if [ -f $(WORK_DIR)/simv ]; then \
 		echo -e "Compiled: $(GREEN)Yes$(NO_COLOR)"; \
@@ -563,14 +660,45 @@ status:
 	echo "Logs: $$LOGS file(s)"
 
 # ============================================================================
+# Setup Helper - Create Plan A Directory Structure
+# ============================================================================
+.PHONY: setup_plan_a
+
+setup_plan_a:
+	@echo -e "$(CYAN)=== Creating Plan A Directory Structure ===$(NO_COLOR)"
+	@mkdir -p $(SRC_DIR)
+	@mkdir -p $(TB_COMMON_DIR)
+	@mkdir -p $(TB_NON_UVM_DIR)
+	@mkdir -p $(TB_UVM_DIR)
+	@mkdir -p $(SCRIPT_DIR)
+	@mkdir -p $(CONFIG_DIR)
+	@echo -e "$(GREEN)✓ Directory structure created$(NO_COLOR)"
+	@echo ""
+	@echo "Created directories:"
+	@echo "  $(SRC_DIR)/           - Place RTL design files here"
+	@echo "  $(TB_COMMON_DIR)/     - Place dut_if.sv, dut_checker.sv here"
+	@echo "  $(TB_NON_UVM_DIR)/    - Place tb_top.sv, tb_pkg.sv here"
+	@echo "  $(TB_UVM_DIR)/        - Place uvm_tb_top.sv, uvm_tb_pkg.sv here"
+	@echo "  $(SCRIPT_DIR)/        - Place TCL scripts here"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1. Place your files in the appropriate directories"
+	@echo "  2. Run: make check"
+	@echo "  3. Run: make list_files"
+
+# ============================================================================
 # Help
 # ============================================================================
 .PHONY: help help_all
 
 help:
 	@echo -e "$(CYAN)╔════════════════════════════════════════════════════════════════╗$(NO_COLOR)"
-	@echo -e "$(CYAN)║    IC Automation Makefile - Enhanced Version 2.0              ║$(NO_COLOR)"
+	@echo -e "$(CYAN)║   IC Automation Makefile - Plan A Architecture v2.1           ║$(NO_COLOR)"
+	@echo -e "$(CYAN)║   Shared Components: testbench/common/                        ║$(NO_COLOR)"
 	@echo -e "$(CYAN)╚════════════════════════════════════════════════════════════════╝$(NO_COLOR)"
+	@echo ""
+	@echo -e "$(YELLOW)Setup:$(NO_COLOR)"
+	@echo "  setup_plan_a     - Create Plan A directory structure"
 	@echo ""
 	@echo -e "$(YELLOW)Basic Targets:$(NO_COLOR)"
 	@echo "  all              - Run checks, compile and simulate"
@@ -603,21 +731,22 @@ help:
 	@echo "  show_errors      - Show errors from log"
 	@echo "  show_warnings    - Show warnings from log"
 	@echo ""
-	@echo -e "$(YELLOW)UVM Targets:$(NO_COLOR)"
+	@echo -e "$(YELLOW)UVM Targets (testbench/uvm/):$(NO_COLOR)"
 	@echo "  uvm_compile      - Compile with UVM"
 	@echo "  uvm_sim          - Run UVM simulation"
 	@echo "  uvm_regress      - Run UVM regression"
 	@echo "  uvm_random       - Run UVM random test"
 	@echo "  quick_uvm        - Quick UVM test"
 	@echo ""
-	@echo -e "$(YELLOW)Non-UVM Targets:$(NO_COLOR)"
+	@echo -e "$(YELLOW)Non-UVM Targets (testbench/non_uvm/):$(NO_COLOR)"
 	@echo "  non_uvm_compile  - Compile non-UVM testbench"
 	@echo "  non_uvm_sim      - Run non-UVM simulation"
 	@echo "  non_uvm_regress  - Run non-UVM regression"
 	@echo ""
 	@echo -e "$(YELLOW)Utility Targets:$(NO_COLOR)"
 	@echo "  check            - Run pre-flight checks"
-	@echo "  list_files       - List discovered files"
+	@echo "  check_structure  - Verify Plan A directory structure"
+	@echo "  list_files       - List discovered files by category"
 	@echo "  tree             - Show directory tree"
 	@echo "  status           - Show project status"
 	@echo "  clean            - Clean workspace"
@@ -635,18 +764,38 @@ help:
 	@echo "  COV_ENABLE       - Enable coverage (set to 1)"
 	@echo "  PROF_ENABLE      - Enable profiling (set to 1)"
 	@echo ""
+	@echo -e "$(YELLOW)Plan A Architecture:$(NO_COLOR)"
+	@echo "  testbench/common/    - Shared: dut_if.sv, dut_checker.sv"
+	@echo "  testbench/non_uvm/   - Non-UVM: tb_top.sv, tb_pkg.sv"
+	@echo "  testbench/uvm/       - UVM: uvm_tb_top.sv, uvm_tb_pkg.sv"
+	@echo ""
 	@echo -e "$(YELLOW)Examples:$(NO_COLOR)"
-	@echo "  make quick"
-	@echo "  make sim_custom PLUSARGS=\"+NUM_CASES=500 +SEED=123\""
-	@echo "  make uvm_sim TESTCASE=random_test"
-	@echo "  make cov_sim COV_ENABLE=1"
-	@echo "  make wave"
+	@echo "  make setup_plan_a                    # First time setup"
+	@echo "  make non_uvm_sim                     # Run non-UVM test"
+	@echo "  make uvm_sim TESTCASE=random_test    # Run UVM test"
+	@echo "  make cov_sim COV_ENABLE=1            # Run with coverage"
+	@echo "  make wave                            # View waveforms"
 	@echo ""
 	@echo -e "For more information, type: $(GREEN)make help_all$(NO_COLOR)"
 
 help_all: help
 	@echo ""
-	@echo -e "$(CYAN)=== Detailed Information ===$(NO_COLOR)"
+	@echo -e "$(CYAN)=== Detailed Information (Plan A Architecture) ===$(NO_COLOR)"
+	@echo ""
+	@echo -e "$(YELLOW)Plan A File Organization:$(NO_COLOR)"
+	@echo "  Common Components (always included):"
+	@echo "    - testbench/common/dut_if.sv       (interface)"
+	@echo "    - testbench/common/dut_checker.sv  (SVA checker)"
+	@echo ""
+	@echo "  Non-UVM Mode uses:"
+	@echo "    - testbench/non_uvm/tb_top.sv"
+	@echo "    - testbench/non_uvm/tb_pkg.sv"
+	@echo "    + common components"
+	@echo ""
+	@echo "  UVM Mode uses:"
+	@echo "    - testbench/uvm/uvm_tb_top.sv"
+	@echo "    - testbench/uvm/uvm_tb_pkg.sv"
+	@echo "    + common components"
 	@echo ""
 	@echo -e "$(YELLOW)Regression Testing:$(NO_COLOR)"
 	@echo "  UVM regression runs: basic_test, random_test, constraint_test"
@@ -662,12 +811,4 @@ help_all: help
 	@echo "  Location: $(WAVE_DIR)/"
 	@echo "  Formats: FSDB (Verdi), VCD (GTKWave)"
 	@echo "  Archive: waves_archive/waves_<timestamp>.tar.gz"
-	@echo ""
-	@echo -e "$(YELLOW)Directory Structure:$(NO_COLOR)"
-	@echo "  $(SRC_DIR)/       - RTL source files"
-	@echo "  $(TB_DIR)/        - Testbench files"
-	@echo "  $(UVM_DIR)/       - UVM files"
-	@echo "  $(SCRIPT_DIR)/    - TCL scripts"
-	@echo "  $(WORK_DIR)/      - Working directory"
-	@echo "  $(REPORT_DIR)/    - Reports and logs"
 	@echo ""
