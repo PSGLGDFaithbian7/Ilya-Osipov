@@ -1,0 +1,23 @@
+# Run directories
+runs/
+archives/*.tar.gz
+
+# Log files
+*.log
+*.rpt
+
+# Temporary files
+*.swp
+*.tmp
+*~
+
+# Checkpoint files
+*.db
+*.ddc
+
+# Configuration cache
+.config_cache
+
+# IDE files
+.vscode/
+.idea/
