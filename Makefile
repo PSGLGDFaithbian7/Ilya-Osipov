@@ -1,6 +1,6 @@
 # Spyglass RTL Analysis Framework - P-2019 Compatible Version
 # Version: 3.1 - Fixed for Spyglass P-2019.06
-
+# Author: Nicolai "dev1ce" Reedtz
 ##############################################################################
 # Configuration
 ##############################################################################
