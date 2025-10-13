@@ -2,7 +2,7 @@
 # Industrial IC Automation Makefile for VCS+Verdi - Enhanced Version
 # Supports UVM, Non-UVM with Shared Components Architecture (Plan A)
 # Author: Ilya "Monesy" Osipov 
-# Version: 2.1 - Plan A
+# Version: 2.1 Enhanced - Plan A
 # ============================================================================
 
 # Project Configuration
@@ -12,8 +12,8 @@ TESTCASE       ?= basic_test
 SEED           ?= $(shell date +%s)
 
 # Tool Paths - Auto-detect or use provided paths
-VCS_HOME       ?= $(shell which vcs | xargs dirname | xargs dirname)
-VERDI_HOME     ?= $(shell which verdi | xargs dirname | xargs dirname)
+VCS_HOME       ?= $(shell which vcs 2>/dev/null | xargs dirname | xargs dirname)
+VERDI_HOME     ?= $(shell which verdi 2>/dev/null | xargs dirname | xargs dirname)
 UVM_HOME       ?= $(VCS_HOME)/etc/uvm-1.2
 
 # Directory Structure - Plan A Architecture
@@ -84,8 +84,20 @@ VCS_COMPILE_OPTS := -sverilog \
                     -timescale=1ns/1ps \
                     $(INC_FLAGS)
 
+# Load additional compile options from file if exists
+ifneq (,$(wildcard $(CONFIG_DIR)/compile_opts.f))
+    VCS_COMPILE_OPTS += -f $(ROOT_DIR)/$(CONFIG_DIR)/compile_opts.f
+    $(info ✓ Loading compile options from $(CONFIG_DIR)/compile_opts.f)
+endif
+
 # Coverage Options (optional, enable with COV_ENABLE=1)
 ifdef COV_ENABLE
+    # ⭐ 新增：检测并加载coverage.cfg配置文件
+    ifneq (,$(wildcard $(CONFIG_DIR)/coverage.cfg))
+        VCS_COMPILE_OPTS += -cm_hier $(ROOT_DIR)/$(CONFIG_DIR)/coverage.cfg
+        $(info ✓ Loading coverage hierarchy from $(CONFIG_DIR)/coverage.cfg)
+    endif
+    
     VCS_COMPILE_OPTS += -cm line+cond+fsm+tgl+branch+assert \
                         -cm_dir $(COV_DIR)/simv.vdb \
                         -cm_name $(TESTCASE)_$(TIMESTAMP)
@@ -175,9 +187,9 @@ all: check compile sim
 # ============================================================================
 # Pre-flight Checks - Enhanced for Plan A
 # ============================================================================
-.PHONY: check check_tools check_files check_structure
+.PHONY: check check_tools check_files check_structure check_config
 
-check: check_tools check_structure check_files
+check: check_tools check_structure check_config check_files
 	@echo -e "$(GREEN)=== All checks passed ===$(NO_COLOR)"
 
 check_tools:
@@ -202,6 +214,23 @@ check_structure:
 		mkdir -p $(TB_UVM_DIR); \
 	fi
 	@echo -e "$(GREEN)✓ Directory structure verified$(NO_COLOR)"
+
+check_config:
+	@echo -e "$(CYAN)=== Checking Configuration Files ===$(NO_COLOR)"
+	@if [ ! -d $(CONFIG_DIR) ]; then \
+		echo -e "$(YELLOW)⚠ Creating config directory$(NO_COLOR)"; \
+		mkdir -p $(CONFIG_DIR); \
+	fi
+	@if [ -f $(CONFIG_DIR)/coverage.cfg ]; then \
+		echo -e "$(GREEN)✓ Found coverage.cfg$(NO_COLOR)"; \
+	else \
+		echo -e "$(YELLOW)⚠ coverage.cfg not found (will use defaults)$(NO_COLOR)"; \
+	fi
+	@if [ -f $(CONFIG_DIR)/compile_opts.f ]; then \
+		echo -e "$(GREEN)✓ Found compile_opts.f$(NO_COLOR)"; \
+	else \
+		echo -e "$(YELLOW)⚠ compile_opts.f not found (optional)$(NO_COLOR)"; \
+	fi
 
 check_files:
 	@echo -e "$(CYAN)=== Checking Files (Plan A Architecture) ===$(NO_COLOR)"
@@ -228,17 +257,17 @@ check_files:
 		echo -e "$(YELLOW)⚠ WARNING: No common files found in $(TB_COMMON_DIR)/$(NO_COLOR)"; \
 		echo "  Expected: dut_if.sv, dut_checker.sv"; \
 	fi
-	@ifdef UVM_ENABLE
-		@if [ $(words $(UVM_TB_FILES)) -eq 0 ] && [ $(words $(UVM_LEGACY_FILES)) -eq 0 ]; then \
-			echo -e "$(RED)✗ ERROR: UVM mode but no UVM files found$(NO_COLOR)"; \
-			exit 1; \
-		fi
-	@else
-		@if [ $(words $(NON_UVM_FILES)) -eq 0 ]; then \
-			echo -e "$(RED)✗ ERROR: No non-UVM files found in $(TB_NON_UVM_DIR)/$(NO_COLOR)"; \
-			exit 1; \
-		fi
-	@endif
+ifdef UVM_ENABLE
+	@if [ $(words $(UVM_TB_FILES)) -eq 0 ] && [ $(words $(UVM_LEGACY_FILES)) -eq 0 ]; then \
+		echo -e "$(RED)✗ ERROR: UVM mode but no UVM files found$(NO_COLOR)"; \
+		exit 1; \
+	fi
+else
+	@if [ $(words $(NON_UVM_FILES)) -eq 0 ]; then \
+		echo -e "$(RED)✗ ERROR: No non-UVM files found in $(TB_NON_UVM_DIR)/$(NO_COLOR)"; \
+		exit 1; \
+	fi
+endif
 	@echo -e "$(GREEN)✓ Files check complete$(NO_COLOR)"
 
 # ============================================================================
@@ -369,7 +398,7 @@ show_warnings:
 # ============================================================================
 # Coverage Analysis
 # ============================================================================
-.PHONY: cov_compile cov_sim cov_merge cov_report
+.PHONY: cov_compile cov_sim cov_merge cov_report cov_gui
 
 cov_compile:
 	@echo -e "$(CYAN)=== Compiling with coverage ===$(NO_COLOR)"
@@ -400,7 +429,7 @@ cov_gui:
 # ============================================================================
 # Waveform Management
 # ============================================================================
-.PHONY: wave wave_fsdb wave_vcd list_waves latest_wave wave_clean wave_archive
+.PHONY: wave wave_fsdb wave_vcd list_waves latest_wave wave_clean wave_archive wave_auto
 
 wave:
 	@echo -e "$(CYAN)=== Searching for waveform files ===$(NO_COLOR)"
@@ -479,6 +508,7 @@ wave_auto:
 	else \
 		echo -e "$(RED)No FSDB files found$(NO_COLOR)"; \
 	fi
+
 # ============================================================================
 # Debug and Analysis
 # ============================================================================
@@ -660,11 +690,11 @@ status:
 	echo "Logs: $$LOGS file(s)"
 
 # ============================================================================
-# Setup Helper - Create Plan A Directory Structure
+# Setup Helper - Create Plan A Directory Structure with Template Files
 # ============================================================================
-.PHONY: setup_plan_a
+.PHONY: setup_plan_a setup_config_files
 
-setup_plan_a:
+setup_plan_a: setup_config_files
 	@echo -e "$(CYAN)=== Creating Plan A Directory Structure ===$(NO_COLOR)"
 	@mkdir -p $(SRC_DIR)
 	@mkdir -p $(TB_COMMON_DIR)
@@ -680,11 +710,47 @@ setup_plan_a:
 	@echo "  $(TB_NON_UVM_DIR)/    - Place tb_top.sv, tb_pkg.sv here"
 	@echo "  $(TB_UVM_DIR)/        - Place uvm_tb_top.sv, uvm_tb_pkg.sv here"
 	@echo "  $(SCRIPT_DIR)/        - Place TCL scripts here"
+	@echo "  $(CONFIG_DIR)/        - Configuration files (coverage.cfg, compile_opts.f)"
 	@echo ""
 	@echo "Next steps:"
 	@echo "  1. Place your files in the appropriate directories"
 	@echo "  2. Run: make check"
 	@echo "  3. Run: make list_files"
+
+setup_config_files:
+	@echo -e "$(CYAN)=== Creating configuration template files ===$(NO_COLOR)"
+	@mkdir -p $(CONFIG_DIR)
+	@if [ ! -f $(CONFIG_DIR)/coverage.cfg ]; then \
+		echo "# Coverage Hierarchy Configuration" > $(CONFIG_DIR)/coverage.cfg; \
+		echo "# Format: +tree <instance_path>" >> $(CONFIG_DIR)/coverage.cfg; \
+		echo "" >> $(CONFIG_DIR)/coverage.cfg; \
+		echo "# Enable coverage for specific modules" >> $(CONFIG_DIR)/coverage.cfg; \
+		echo "+tree tb_top" >> $(CONFIG_DIR)/coverage.cfg; \
+		echo "+tree tb_top.dut" >> $(CONFIG_DIR)/coverage.cfg; \
+		echo "" >> $(CONFIG_DIR)/coverage.cfg; \
+		echo "# Exclude specific instances (example)" >> $(CONFIG_DIR)/coverage.cfg; \
+		echo "# -tree tb_top.unused_module" >> $(CONFIG_DIR)/coverage.cfg; \
+		echo -e "$(GREEN)✓ Created $(CONFIG_DIR)/coverage.cfg$(NO_COLOR)"; \
+	else \
+		echo -e "$(YELLOW)⚠ $(CONFIG_DIR)/coverage.cfg already exists$(NO_COLOR)"; \
+	fi
+	@if [ ! -f $(CONFIG_DIR)/compile_opts.f ]; then \
+		echo "# Additional VCS Compilation Options" > $(CONFIG_DIR)/compile_opts.f; \
+		echo "# One option per line" >> $(CONFIG_DIR)/compile_opts.f; \
+		echo "" >> $(CONFIG_DIR)/compile_opts.f; \
+		echo "# Define macros" >> $(CONFIG_DIR)/compile_opts.f; \
+		echo "#+define+SIMULATION" >> $(CONFIG_DIR)/compile_opts.f; \
+		echo "#+define+DEBUG_MODE" >> $(CONFIG_DIR)/compile_opts.f; \
+		echo "" >> $(CONFIG_DIR)/compile_opts.f; \
+		echo "# Additional include directories" >> $(CONFIG_DIR)/compile_opts.f; \
+		echo "#++incdir+/path/to/extra/includes" >> $(CONFIG_DIR)/compile_opts.f; \
+		echo "" >> $(CONFIG_DIR)/compile_opts.f; \
+		echo "# Suppress specific warnings (example)" >> $(CONFIG_DIR)/compile_opts.f; \
+		echo "#+warn=noTFIPC" >> $(CONFIG_DIR)/compile_opts.f; \
+		echo -e "$(GREEN)✓ Created $(CONFIG_DIR)/compile_opts.f$(NO_COLOR)"; \
+	else \
+		echo -e "$(YELLOW)⚠ $(CONFIG_DIR)/compile_opts.f already exists$(NO_COLOR)"; \
+	fi
 
 # ============================================================================
 # Help
@@ -698,7 +764,8 @@ help:
 	@echo -e "$(CYAN)╚════════════════════════════════════════════════════════════════╝$(NO_COLOR)"
 	@echo ""
 	@echo -e "$(YELLOW)Setup:$(NO_COLOR)"
-	@echo "  setup_plan_a     - Create Plan A directory structure"
+	@echo "  setup_plan_a     - Create Plan A directory structure with config files"
+	@echo "  setup_config_files - Create coverage.cfg and compile_opts.f templates"
 	@echo ""
 	@echo -e "$(YELLOW)Basic Targets:$(NO_COLOR)"
 	@echo "  all              - Run checks, compile and simulate"
@@ -746,6 +813,7 @@ help:
 	@echo -e "$(YELLOW)Utility Targets:$(NO_COLOR)"
 	@echo "  check            - Run pre-flight checks"
 	@echo "  check_structure  - Verify Plan A directory structure"
+	@echo "  check_config     - Check configuration files"
 	@echo "  list_files       - List discovered files by category"
 	@echo "  tree             - Show directory tree"
 	@echo "  status           - Show project status"
@@ -797,6 +865,17 @@ help_all: help
 	@echo "    - testbench/uvm/uvm_tb_pkg.sv"
 	@echo "    + common components"
 	@echo ""
+	@echo -e "$(YELLOW)Configuration Files:$(NO_COLOR)"
+	@echo "  config/coverage.cfg:"
+	@echo "    - Define coverage hierarchy"
+	@echo "    - Include/exclude specific modules"
+	@echo "    - Format: +tree <path> or -tree <path>"
+	@echo ""
+	@echo "  config/compile_opts.f:"
+	@echo "    - Additional VCS compilation options"
+	@echo "    - Macro definitions"
+	@echo "    - Warning suppressions"
+	@echo ""
 	@echo -e "$(YELLOW)Regression Testing:$(NO_COLOR)"
 	@echo "  UVM regression runs: basic_test, random_test, constraint_test"
 	@echo "  Non-UVM regression runs: 100, 500, 1000 test cases"
@@ -806,6 +885,7 @@ help_all: help
 	@echo "  Coverage types: line, condition, FSM, toggle, branch, assertion"
 	@echo "  Database location: $(COV_DIR)/simv.vdb"
 	@echo "  Reports: $(COV_DIR)/coverage_report/"
+	@echo "  Hierarchy config: $(CONFIG_DIR)/coverage.cfg"
 	@echo ""
 	@echo -e "$(YELLOW)Waveform Files:$(NO_COLOR)"
 	@echo "  Location: $(WAVE_DIR)/"
