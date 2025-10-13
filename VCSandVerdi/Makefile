@@ -764,7 +764,7 @@ help:
 	@echo -e "$(CYAN)╚════════════════════════════════════════════════════════════════╝$(NO_COLOR)"
 	@echo ""
 	@echo -e "$(YELLOW)Setup:$(NO_COLOR)"
-	@echo "  setup_plan_a     - Create Plan A directory structure with config files"
+	@echo "  setup     - Create  A directory structure with config files"
 	@echo "  setup_config_files - Create coverage.cfg and compile_opts.f templates"
 	@echo ""
 	@echo -e "$(YELLOW)Basic Targets:$(NO_COLOR)"
