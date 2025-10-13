@@ -127,10 +127,10 @@ ifdef UVM_ENABLE
     # Priority: testbench/uvm/ > legacy uvm/ directory
     ifneq ($(UVM_TB_FILES),)
         ALL_FILES_ABS := $(COMMON_FILES_ABS) $(UVM_TB_FILES_ABS) $(SRC_FILES_ABS)
-        TB_MODE := "UVM (testbench/uvm/)"
+        TB_MODE := UVM (testbench/uvm/)
     else ifneq ($(UVM_LEGACY_FILES),)
         ALL_FILES_ABS := $(COMMON_FILES_ABS) $(UVM_LEGACY_FILES_ABS) $(SRC_FILES_ABS)
-        TB_MODE := "UVM (legacy uvm/)"
+        TB_MODE := UVM (legacy uvm/)
     else
         $(error UVM mode enabled but no UVM files found in $(TB_UVM_DIR) or $(UVM_DIR))
     endif
@@ -149,7 +149,7 @@ ifdef UVM_ENABLE
 else
     # Non-UVM Mode: Common + Non-UVM specific files
     ALL_FILES_ABS := $(COMMON_FILES_ABS) $(NON_UVM_FILES_ABS) $(SRC_FILES_ABS)
-    TB_MODE := "Non-UVM (testbench/non_uvm/)"
+    TB_MODE := Non-UVM (testbench/non_uvm/)
     
     # Non-UVM Simulation options
     SIM_OPTS := +NUM_CASES=1000 \
@@ -158,7 +158,6 @@ else
                 $(SIM_COVERAGE) \
                 $(SIM_PROF)
 endif
-
 # Verdi Options
 VERDI_OPTS     := -sv \
                   -ssf $(WAVE_DIR)/$(PROJECT_NAME).fsdb \
