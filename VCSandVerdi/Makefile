@@ -434,19 +434,19 @@ wave:
 	@echo -e "$(CYAN)=== Searching for waveform files ===$(NO_COLOR)"
 	@if [ -f $(WAVE_DIR)/$(PROJECT_NAME).fsdb ]; then \
 		echo "Opening: $(WAVE_DIR)/$(PROJECT_NAME).fsdb"; \
-		cd $(WAVE_DIR) && verdi -ssf $(PROJECT_NAME).fsdb -nologo &; \
-	elif [ -n "$$(ls $(WAVE_DIR)/*.fsdb 2>/dev/null)" ]; then \
+		cd $(WAVE_DIR) && verdi -ssf $(PROJECT_NAME).fsdb -nologo & \
+	elif [ -n "$$(ls $(WAVE_DIR)/*.fsdb 2>/dev/null | head -1)" ]; then \
 		FSDB=$$(ls -t $(WAVE_DIR)/*.fsdb | head -1); \
 		echo "Opening latest FSDB: $$FSDB"; \
-		verdi -ssf $$FSDB -nologo &; \
-	elif [ -n "$$(ls $(WAVE_DIR)/*.vcd 2>/dev/null)" ]; then \
+		verdi -ssf $$FSDB -nologo & \
+	elif [ -n "$$(ls $(WAVE_DIR)/*.vcd 2>/dev/null | head -1)" ]; then \
 		VCD=$$(ls -t $(WAVE_DIR)/*.vcd | head -1); \
 		echo "Opening latest VCD: $$VCD"; \
 		if command -v gtkwave > /dev/null; then \
-			gtkwave $$VCD &; \
+			gtkwave $$VCD & \
 		else \
 			echo -e "$(YELLOW)GTKWave not found, please install it$(NO_COLOR)"; \
-		fi; \
+		fi \
 	else \
 		echo -e "$(RED)Error: No waveform files found in $(WAVE_DIR)/$(NO_COLOR)"; \
 		echo "Run: make sim_waves"; \
@@ -457,7 +457,7 @@ wave_fsdb:
 	@FSDB=$$(ls -t $(WAVE_DIR)/*.fsdb 2>/dev/null | head -1); \
 	if [ -n "$$FSDB" ]; then \
 		echo -e "$(GREEN)Opening FSDB: $$FSDB$(NO_COLOR)"; \
-		verdi -ssf $$FSDB -nologo &; \
+		verdi -ssf $$FSDB -nologo & \
 	else \
 		echo -e "$(RED)No FSDB files found$(NO_COLOR)"; \
 	fi
@@ -466,7 +466,7 @@ wave_vcd:
 	@VCD=$$(ls -t $(WAVE_DIR)/*.vcd 2>/dev/null | head -1); \
 	if [ -n "$$VCD" ]; then \
 		echo -e "$(GREEN)Opening VCD: $$VCD$(NO_COLOR)"; \
-		gtkwave $$VCD &; \
+		gtkwave $$VCD & \
 	else \
 		echo -e "$(RED)No VCD files found$(NO_COLOR)"; \
 	fi
@@ -503,11 +503,26 @@ wave_auto:
 	@FSDB=$$(ls -t $(WAVE_DIR)/*.fsdb 2>/dev/null | head -1); \
 	if [ -n "$$FSDB" ]; then \
 		echo "Opening with signals.tcl: $$FSDB"; \
-		verdi -ssf $$FSDB -play $(ROOT_DIR)/$(SCRIPT_DIR)/signals.tcl -nologo &; \
+		verdi -ssf $$FSDB -play $(ROOT_DIR)/$(SCRIPT_DIR)/signals.tcl -nologo & \
 	else \
 		echo -e "$(RED)No FSDB files found$(NO_COLOR)"; \
 	fi
 
+# ============================================================================
+# 新增：简化版本（更稳定）
+# ============================================================================
+wave_simple:
+	@echo -e "$(CYAN)=== Opening waveform (simple mode) ===$(NO_COLOR)"
+	@FSDB=$$(ls -t $(WAVE_DIR)/*.fsdb 2>/dev/null | head -1); \
+	if [ -n "$$FSDB" ]; then \
+		echo "Opening: $$FSDB"; \
+		verdi -ssf $$FSDB -nologo & \
+		echo -e "$(GREEN)✓ Verdi launched$(NO_COLOR)"; \
+	else \
+		echo -e "$(RED)No FSDB files found in $(WAVE_DIR)/$(NO_COLOR)"; \
+		echo "Available files:"; \
+		ls -la $(WAVE_DIR)/*.fsdb 2>/dev/null || echo "  None"; \
+	fi
 # ============================================================================
 # Debug and Analysis
 # ============================================================================
