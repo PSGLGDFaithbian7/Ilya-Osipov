@@ -694,7 +694,7 @@ status:
 # ============================================================================
 .PHONY: setup_plan_a setup_config_files
 
-setup_plan_a: setup_config_files
+setup: setup_config_files
 	@echo -e "$(CYAN)=== Creating Plan A Directory Structure ===$(NO_COLOR)"
 	@mkdir -p $(SRC_DIR)
 	@mkdir -p $(TB_COMMON_DIR)
