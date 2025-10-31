@@ -55,48 +55,7 @@ make view_rdc
 
 # 查看项目状态
 make status
-```
-
-## 核心文件: `scripts/run_spyglass.tcl`
-
-**必须手动创建**，最小模板：
-
-```tcl
-# 读取环境变量
-set project_name $::env(PROJECT_NAME)
-set top_modules  $::env(TOP_MODULES)
-set rtl_list     $::env(RTL_FILELIST)
-set results_dir  $::env(RESULTS_DIR)
-set timestamp    $::env(TIMESTAMP)
-set goal         $::env(SG_GOAL)
-
-# 创建项目
-new_project $project_name -force
-
-# 读取RTL文件
-read_file -type sourcelist $rtl_list
-
-# 读取include路径
-if {[file exists $::env(INCLUDE_FILELIST)]} {
-    read_file -type sourcelist $::env(INCLUDE_FILELIST)
-}
-
-# 设置顶层
-set_option top $top_modules
-
-# 设置输出目录
-set output_dir "$results_dir/$goal/run_$timestamp"
-file mkdir $output_dir
-set_option projectwdir $output_dir
-
-# 运行分析
-current_goal $goal
-run_goal
-
-# 生成报告
-write_report moresimple > $output_dir/summary.rpt
-
-exit 0
+``
 ```
 
 ## 常用命令
