@@ -1,0 +1,193 @@
+# =============================================================================
+# Design Compiler Synthesis Configuration - Complete Template
+# Supports Multiple Clocks, Resets, Libraries, and IO Groups
+# =============================================================================
+
+project:
+  name: "my_design_project"
+  top_module: "TOP_log2"
+  author: "Design Team"
+  version: "1.0.0"
+
+# Multiple Libraries Support
+library:
+  search_paths:
+    - "${PROJECT_ROOT}/lib"
+    - "${TSMC_LIB_PATH}/digital"
+    - "/tools/synopsys/libraries"
+    
+  # Multiple target libraries
+  target_libraries:
+    - "tcbn65lpwc_ccs.db"      # Worst case
+    - "tcbn65lptc_ccs.db"      # Typical case
+    
+  # Multiple link libraries
+  link_libraries:
+    - "tpan65lpnv2od3wc.db"    # IO pads
+    - "memory_65nm.db"         # Memory
+    
+  symbol_libraries:
+    - "tcbn65lp.sdb"
+    
+  synthetic_libraries:
+    - "dw_foundation.sldb"
+    
+  operating_conditions:
+    worst: "WCCOM"
+    library_name: "tcbn65lpwc_ccs"
+    
+  wire_load:
+    mode: "segmented"
+    selection: "WireAreaLowkCon"
+    
+  default_load_pf: 5.0
+
+# RTL Configuration
+rtl:
+  search_dirs:
+    - "./rtl"
+    - "./rtl/src"
+    - "./rtl/log2_pe"
+    
+  include_dirs:
+    - "./rtl/include"
+    
+  defines:
+    - "SYNTHESIS=1"
+    
+  file_extensions:
+    - "*.v"
+    - "*.sv"
+    - "*.vhd"
+
+# Multiple Clocks Configuration
+clocks:
+  - name: "clk"
+    port: "clk"
+    period: 4.0
+    waveform: [0.0, 2.0]
+    uncertainty:
+      setup: 0.2
+      hold: 0.05
+    latency:
+      source_max: 0.4
+      source_min: 0.08
+      network_max: 0.4
+      network_min: 0.08
+    transition:
+      max: 0.08
+      min: 0.04
+      
+  # Add more clocks as needed
+  # - name: "clk_slow"
+  #   port: "clk_slow"
+  #   period: 10.0
+  #   waveform: [0.0, 5.0]
+
+  # Clock relationships (optional - defaults to all async)
+  # clock_relationships:
+  #   asynchronous_groups:
+  #     - ["clk", "clk_slow"]
+
+# Multiple Resets Configuration
+resets:
+  - name: "rst_n"
+    port: "rst_n"
+    active_low: true
+    
+  # Add more resets as needed
+  # - name: "soft_rst_n"
+  #   port: "soft_rst_n"
+  #   active_low: true
+
+# IO Constraints - Multiple Groups
+io_constraints:
+  global_defaults:
+    output_load: 5.0
+    
+  inputs:
+    - ports: ["A_in", "B_in"]
+      clock: "clk"
+      max_delay: 2.0
+      min_delay: 0.0
+      
+    # Add more input groups as needed
+      
+  outputs:
+    - ports: ["out"]
+      clock: "clk"
+      max_delay: 0.8
+      min_delay: 0.0
+      load: 10.0
+      
+    # Add more output groups as needed
+
+# Synthesis Options
+synthesis:
+  compile_strategy: "ultra"
+  
+  optimization:
+    gate_clock: true
+    auto_ungroup: false
+    boundary_optimization: false
+    sequential_output_inversion: false
+    structure_timing: true
+    structure_boolean: false
+    
+  power:
+    leakage_optimization: true
+    dynamic_optimization: true
+    clock_gating_style: "latch"
+    
+  area:
+    max_area: 0
+    effort: "high"
+    
+  advanced:
+    fix_multiple_port_nets: true
+    buffer_constants: true
+    high_fanout_threshold: 60
+    high_fanout_pin_cap: 0.01
+    max_cores: 16
+
+# Power Analysis
+power_analysis:
+  method: "vectorless"
+  
+  vectorless:
+    clock_toggle_rate: 1.0
+    reset_toggle_rate: 0.01
+    data_toggle_rate: 0.2
+    register_toggle_rate: 0.1
+    output_toggle_rate: 0.1
+    static_probability: 0.5
+    
+  analysis:
+    effort: "high"
+
+# Report Configuration
+reports:
+  organization:
+    by_time: true
+    by_category: true
+    
+  categories:
+    timing:
+      enabled: true
+      paths: 50
+      
+    area:
+      enabled: true
+      hierarchy: true
+      
+    power:
+      enabled: true
+      hierarchy: true
+      switching_activity: true
+      
+    clock:
+      enabled: true
+      gating_report: true
+      
+    qor:
+      enabled: true
